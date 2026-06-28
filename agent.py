@@ -12,8 +12,8 @@ def generate_card(keyword: str, style_name: str) -> dict:
 
     response = chat(
         [{"role": "user", "content": prompt}],
-        temperature=0.9,
-        max_tokens=400,
+        temperature=1.05,
+        max_tokens=600,
     )
 
     text = response.strip()
