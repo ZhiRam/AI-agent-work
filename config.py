@@ -14,6 +14,7 @@ if not _api_key:
 DEEPSEEK_API_KEY = _api_key
 DEEPSEEK_BASE_URL = "https://api.siliconflow.cn/v1"
 DEEPSEEK_MODEL = "deepseek-ai/DeepSeek-V3"
+VISION_MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"  # 视觉模型，用于读取图片型PDF
 
 # 对话参数
 TEMPERATURE = 0.9

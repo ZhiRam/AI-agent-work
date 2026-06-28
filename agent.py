@@ -1,6 +1,6 @@
 """Agent 类：期末突击教练"""
 
-from llm_client import chat
+from llm_client import chat, chat_vision
 from memory import MemoryStore
 from prompts import TUTOR_PROMPT
 
@@ -42,6 +42,22 @@ class TutorAgent:
 
 注意：如果课件内容被截断了，请基于已有内容尽力分析。"""
         return self._call(prompt)
+
+    # ─── 阶段 0.5：视觉模型分析图片型 PDF ───
+    def analyze_pdf_vision(self, course_name: str, page_images: list[str],
+                           exam_date: str, available_hours: int) -> str:
+        """用视觉模型分析扫描版 PDF，读取图片内容并提取知识点"""
+        text_prompt = f"""这是一份【{course_name}】课件的扫描图片（共{len(page_images)}页）。
+
+请仔细阅读每一页的内容，然后完成：
+1. 提取所有知识点，整理成树状结构（Markdown列表）
+2. 标注每个知识点的重要度（⭐⭐⭐必考 / ⭐⭐常考 / ⭐偶尔）和难度（难/中/易）
+3. 指出 3 个"绝对不能丢分"的核心考点
+4. 如果图片中有公式、图表，也请尝试理解并纳入知识点
+
+注意：如果某页内容不清晰或无法辨认，请跳过该页。考试日期：{exam_date}，可用复习时间：约{available_hours}小时。"""
+
+        return chat_vision(text_prompt, page_images)
 
     # ─── 阶段 1：分析课程 ───
     def analyze_course(self, course_name: str, topics: str, exam_date: str, available_hours: int) -> str:

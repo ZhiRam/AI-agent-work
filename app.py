@@ -3,6 +3,8 @@
 import streamlit as st
 import os
 import io
+import base64
+import fitz  # pymupdf
 from PyPDF2 import PdfReader
 from agent import TutorAgent
 from llm_client import check_api_key, reset_client
@@ -10,12 +12,15 @@ from llm_client import check_api_key, reset_client
 # ──────────────────────────────────────────────
 # PDF 工具函数
 # ──────────────────────────────────────────────
+MAX_VISION_PAGES = 6  # 视觉模型最多分析的页数
+
+
 def extract_pdf_text(uploaded_file) -> str:
-    """从上传的 PDF 文件中提取文本"""
+    """从上传的 PDF 文件中提取文本（文字型PDF）"""
     reader = PdfReader(uploaded_file)
     text_parts = []
     total_chars = 0
-    max_chars = 10000  # 最多提取10000字
+    max_chars = 10000
     for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
@@ -24,6 +29,23 @@ def extract_pdf_text(uploaded_file) -> str:
             if total_chars > max_chars:
                 break
     return "\n\n".join(text_parts)
+
+
+def pdf_to_images(uploaded_file, max_pages: int = MAX_VISION_PAGES) -> list[str]:
+    """将 PDF 页面转为 base64 编码的图片列表（用于视觉模型）"""
+    uploaded_file.seek(0)
+    pdf_bytes = uploaded_file.read()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    images = []
+    for i, page in enumerate(doc):
+        if i >= max_pages:
+            break
+        pix = page.get_pixmap(dpi=150)
+        img_bytes = pix.tobytes("png")
+        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+        images.append(img_b64)
+    doc.close()
+    return images
 
 # ──────────────────────────────────────────────
 st.set_page_config(
@@ -152,47 +174,88 @@ if st.session_state.page == 0:
 
     # 预览 PDF 提取内容
     pdf_text = ""
+    pdf_images_list = []  # 用于视觉模型的图片
+    use_vision = False
+
     if uploaded_files:
         with st.expander(f"📄 已上传 {len(uploaded_files)} 个 PDF，点击预览提取内容"):
             for f in uploaded_files:
                 text = extract_pdf_text(f)
+                text_len = len(text.strip())
                 pdf_text += text + "\n\n"
-                st.caption(f"**{f.name}** — 提取 {len(text)} 字")
-                with st.container(height=120):
-                    st.text(text[:500] + ("..." if len(text) > 500 else ""))
 
-    has_content = bool(course_name.strip()) and (bool(topics.strip()) or bool(pdf_text))
+                if text_len < 100:
+                    # 文字太少 → 可能是扫描版/图片型 PDF → 用视觉模型
+                    st.warning(f"⚠️ **{f.name}** 提取文字仅 {text_len} 字，判定为图片型PDF，将使用视觉模型读取")
+                    try:
+                        imgs = pdf_to_images(f)
+                        pdf_images_list.extend(imgs)
+                        use_vision = True
+                        st.success(f"✅ 已转换 {len(imgs)} 页为图片，将发送给视觉模型分析")
+                        # 显示第一页预览
+                        st.image(f"data:image/png;base64,{imgs[0]}",
+                                caption=f"{f.name} 第1页预览", width=300)
+                    except Exception as e:
+                        st.error(f"转换失败：{e}")
+                else:
+                    st.caption(f"📝 **{f.name}** — 提取 {text_len} 字（文字型PDF）")
+                    with st.container(height=120):
+                        st.text(text[:500] + ("..." if len(text) > 500 else ""))
+
+    has_content = bool(course_name.strip()) and (bool(topics.strip()) or bool(pdf_text) or bool(pdf_images_list))
 
     if st.button("🚀 开始分析", use_container_width=True, type="primary", disabled=not has_content):
-        with st.spinner("🏥 急救王老师正在分析..."):
-            source = topics.strip() if topics.strip() else ""
-            if pdf_text:
-                source += ("\n\n[PDF课件内容]\n" + pdf_text[:8000])
-
-            mem.course_info = {
-                "name": course_name.strip(),
-                "exam_date": exam_date.strip() or "未知",
-                "hours": available_hours,
-                "topics": source or "（未提供）",
-                "has_pdf": bool(pdf_text),
-            }
-
-            if pdf_text and not topics.strip():
-                # 纯 PDF 上传：用 PDF 专用分析
-                result = agent.analyze_pdf(
+        if use_vision and pdf_images_list:
+            # 图片型 PDF → 视觉模型
+            with st.spinner(f"👁️ 视觉模型正在读取 {len(pdf_images_list)} 页课件..."):
+                mem.course_info = {
+                    "name": course_name.strip(),
+                    "exam_date": exam_date.strip() or "未知",
+                    "hours": available_hours,
+                    "topics": f"[图片型PDF，共{len(pdf_images_list)}页]",
+                    "has_pdf": True,
+                    "is_vision": True,
+                }
+                result = agent.analyze_pdf_vision(
                     course_name=course_name.strip(),
-                    pdf_text=pdf_text,
+                    page_images=pdf_images_list,
                     exam_date=exam_date.strip() or "未知",
                     available_hours=available_hours,
                 )
-            else:
-                # 手动输入或混合：用通用分析
-                result = agent.analyze_course(
-                    course_name=course_name.strip(),
-                    topics=source or "未提供",
-                    exam_date=exam_date.strip() or "未知",
-                    available_hours=available_hours,
-                )
+                # 也可补充手动输入的知识点
+                if topics.strip():
+                    extra_prompt = f"补充知识点：{topics.strip()}\n请把这些也整合进上面的知识地图。"
+                    result += "\n\n---\n" + agent._call(extra_prompt)
+        else:
+            # 文字型 PDF 或手动输入
+            with st.spinner("🏥 急救王老师正在分析..."):
+                source = topics.strip() if topics.strip() else ""
+                if pdf_text:
+                    source += ("\n\n[PDF课件内容]\n" + pdf_text[:8000])
+
+                mem.course_info = {
+                    "name": course_name.strip(),
+                    "exam_date": exam_date.strip() or "未知",
+                    "hours": available_hours,
+                    "topics": source or "（未提供）",
+                    "has_pdf": bool(pdf_text),
+                    "is_vision": False,
+                }
+
+                if pdf_text and not topics.strip():
+                    result = agent.analyze_pdf(
+                        course_name=course_name.strip(),
+                        pdf_text=pdf_text,
+                        exam_date=exam_date.strip() or "未知",
+                        available_hours=available_hours,
+                    )
+                else:
+                    result = agent.analyze_course(
+                        course_name=course_name.strip(),
+                        topics=source or "未提供",
+                        exam_date=exam_date.strip() or "未知",
+                        available_hours=available_hours,
+                    )
 
             mem.knowledge_map = result
             st.session_state.course_done = True

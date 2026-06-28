@@ -1,7 +1,8 @@
-"""DeepSeek API 客户端封装"""
+"""API 客户端封装"""
 
+import base64
 from openai import OpenAI
-from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, TEMPERATURE, MAX_TOKENS
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL, VISION_MODEL, TEMPERATURE, MAX_TOKENS
 
 _client = None
 
@@ -41,6 +42,37 @@ def chat(messages: list[dict], temperature: float = TEMPERATURE) -> str:
         messages=messages,
         temperature=temperature,
         max_tokens=MAX_TOKENS,
+    )
+    return response.choices[0].message.content
+
+
+def chat_vision(text_prompt: str, image_base64_list: list[str], temperature: float = 0.7) -> str:
+    """发送图片给视觉模型，返回文本分析
+
+    Args:
+        text_prompt: 文字提示
+        image_base64_list: base64 编码的图片列表
+        temperature: 温度参数
+
+    Returns:
+        模型回复文本
+    """
+    client = get_client()
+
+    # 构建 content 数组：[text, image1, image2, ...]
+    content = [{"type": "text", "text": text_prompt}]
+    for img_b64 in image_base64_list:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{img_b64}"},
+        })
+
+    messages = [{"role": "user", "content": content}]
+    response = client.chat.completions.create(
+        model=VISION_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=2048,
     )
     return response.choices[0].message.content
 
