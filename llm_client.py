@@ -16,6 +16,7 @@ def get_client() -> OpenAI:
         _client = OpenAI(
             api_key=config.DEEPSEEK_API_KEY,
             base_url=config.DEEPSEEK_BASE_URL,
+            timeout=60.0,  # 60秒超时
         )
     return _client
 
@@ -26,24 +27,29 @@ def reset_client():
     _client = None
 
 
-def chat(messages: list[dict], temperature: float = TEMPERATURE) -> str:
+def chat(messages: list[dict], temperature: float = TEMPERATURE, max_tokens: int = MAX_TOKENS) -> str:
     """发送聊天请求，返回文本回复
 
     Args:
         messages: OpenAI 格式的消息列表
         temperature: 温度参数
+        max_tokens: 最大输出 token 数
 
     Returns:
         模型回复文本
     """
     client = get_client()
-    response = client.chat.completions.create(
-        model=DEEPSEEK_MODEL,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=MAX_TOKENS,
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=45.0,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"❌ API 调用失败：{str(e)}"
 
 
 def chat_vision(text_prompt: str, image_base64_list: list[str], temperature: float = 0.7) -> str:
@@ -68,13 +74,17 @@ def chat_vision(text_prompt: str, image_base64_list: list[str], temperature: flo
         })
 
     messages = [{"role": "user", "content": content}]
-    response = client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=2048,
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model=VISION_MODEL,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=2048,
+            timeout=90.0,  # 视觉模型较慢，90秒超时
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"❌ 视觉模型调用失败：{str(e)}"
 
 
 def check_api_key() -> bool:

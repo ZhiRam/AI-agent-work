@@ -18,7 +18,7 @@ class TutorAgent:
             {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": user_message},
         ]
-        return chat(messages, temperature=temperature)
+        return chat(messages, temperature=temperature, max_tokens=2048)
 
     # ─── 阶段 0：分析 PDF 课件 ───
     def analyze_pdf(self, course_name: str, pdf_text: str, exam_date: str, available_hours: int) -> str:
@@ -103,23 +103,27 @@ class TutorAgent:
 
     # ─── 阶段 2：出诊断题 ───
     def generate_diagnostic_quiz(self, course_name: str, knowledge_map: str, question_count: int = 4) -> str:
-        """生成诊断题"""
+        """生成诊断题（自动截断过长的知识地图）"""
+        # 截断知识地图避免 token 超限
+        km = knowledge_map[:3000] if len(knowledge_map) > 3000 else knowledge_map
         prompt = f"""课程：【{course_name}】
-知识地图：
-{knowledge_map}
+知识点概要（精简自知识地图）：
+{km}
 
 请出 {question_count} 道诊断题，用来测试学生对核心考点的掌握程度。
 
 要求：
 - 前 2 道选择题（4 个选项），后 2 道简答题
 - 覆盖不同难度和知识点
+- 如果课程涉及电路图/图表，至少出 1 道读图分析题
 - 每题标注【难度】【考点】【分值】
-- 题目后面不要直接给答案，用 <!--答案:...--> 隐藏
+- 答案用 <!--答案:...--> 隐藏
 
 格式：
 ### 第1题（选择题）【难度：中】【考点：XXX】【分值：10】
 题目内容...
 A. xxx  B. xxx  C. xxx  D. xxx
+<!--答案:B-->
 <!--答案:B-->
 """
         return self._call(prompt, temperature=0.8)
@@ -146,12 +150,14 @@ A. xxx  B. xxx  C. xxx  D. xxx
     def generate_cram_plan(self, course_name: str, available_hours: int, weak_points: str,
                            knowledge_map: str) -> str:
         """生成突击复习计划"""
+        km = knowledge_map[:2000] if len(knowledge_map) > 2000 else knowledge_map
+        wp = weak_points[:1000] if len(weak_points) > 1000 else weak_points
         prompt = f"""课程：【{course_name}】
 可用时间：{available_hours} 小时
-知识地图：
-{knowledge_map}
+知识地图（精简）：
+{km}
 薄弱点：
-{weak_points}
+{wp}
 
 请制定一份"极限突击计划"，要求：
 1. 把{available_hours}小时拆成具体的时间块
