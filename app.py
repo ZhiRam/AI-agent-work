@@ -267,6 +267,8 @@ st.markdown("""
 
 # ── Input Row ───────────────────────────────────
 ci, cs = st.columns([5, 2])
+kw = st.session_state.keyword.strip()
+active = st.session_state.active_style
 with ci:
     keyword = st.text_input(
         "关键词",
@@ -278,10 +280,11 @@ with ci:
         st.session_state.keyword = keyword
 with cs:
     if st.button("⚡ 生成", use_container_width=True, type="primary", key="gen_btn"):
-    if kw:
-        st.session_state._trigger = active
-        st.session_state.keyword = kw
-        st.rerun()
+        kw_temp = st.session_state.keyword.strip()
+        if kw_temp:
+            st.session_state._trigger = active
+            st.session_state.keyword = kw_temp
+            st.rerun()
 
 # ── Style Pills ─────────────────────────────────
 pill_cols = st.columns(len(STYLES))
@@ -364,7 +367,6 @@ def render_card(card: dict, style_name: str, style: dict, compact: bool = False)
 
 # ── Generate ────────────────────────────────────
 kw = st.session_state.keyword.strip()
-active = st.session_state.active_style
 
 # If user clicked generate button or has keyword + no card yet for this style
 should_generate = st.session_state.get("_trigger") == active
