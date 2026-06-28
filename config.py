@@ -2,7 +2,8 @@
 
 import os
 
-# DeepSeek API 配置（优先级：环境变量 > Streamlit secrets）
+# API 配置 — 硅基流动（兼容 OpenAI SDK）
+# 优先级：环境变量 > Streamlit secrets
 _api_key = os.getenv("DEEPSEEK_API_KEY", "")
 if not _api_key:
     try:
@@ -11,8 +12,8 @@ if not _api_key:
     except Exception:
         pass
 DEEPSEEK_API_KEY = _api_key
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_BASE_URL = "https://api.siliconflow.cn/v1"
+DEEPSEEK_MODEL = "deepseek-ai/DeepSeek-V3"
 
 # 对话参数
 TEMPERATURE = 0.9
