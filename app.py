@@ -252,8 +252,8 @@ if not check_api_key():
 # ── Session State ───────────────────────────────
 if "cards" not in st.session_state:
     st.session_state.cards = {}
-if "active_style" not in st.session_state:
-    st.session_state.active_style = "禅意水墨"
+if "active_style" not in st.session_state or st.session_state.active_style not in STYLES:
+    st.session_state.active_style = "唐诗气象"
 if "keyword" not in st.session_state:
     st.session_state.keyword = ""
 
