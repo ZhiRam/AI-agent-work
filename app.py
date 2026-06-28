@@ -313,36 +313,33 @@ if not st.session_state.cards:
 
 # ── Card Renderer ───────────────────────────────
 def render_card(card: dict, style_name: str, style: dict, compact: bool = False):
-    """渲染一张艺术卡片"""
+    """渲染一张古典文学卡片"""
     import html as html_mod
     d = style
-    # Escape all card text to prevent HTML injection
-    t_title = html_mod.escape(card.get("title", ""))
-    t_body = html_mod.escape(card.get("text", ""))
-    t_footer = html_mod.escape(card.get("footer", ""))
-    t_emotion = html_mod.escape(card.get("emotion", "")[:2])
 
-    # Decorative elements based on style
+    quote = html_mod.escape(card.get("quote", ""))
+    source = html_mod.escape(card.get("source", ""))
+    paraphrase = html_mod.escape(card.get("paraphrase", ""))
+    emotion = html_mod.escape(card.get("emotion", "")[:2])
+
+    # Decorative elements
     decor_html = ""
     if d["decor"] == "ink":
         decor_html = f'<div class="decor-ink-ring" style="width:180px;height:180px;top:-60px;right:-60px;border-color:{d["text"]};"></div><div class="decor-ink-ring" style="width:100px;height:100px;bottom:-30px;left:-30px;border-color:{d["text"]};"></div><div class="decor-ink-dot" style="width:300px;height:300px;top:20%;left:-100px;background:{d["accent"]};"></div>'
-    elif d["decor"] == "cyber":
-        decor_html = f'<div class="decor-scanline" style="top:30%;background:{d["accent"]};"></div><div class="decor-scanline" style="top:70%;background:{d["accent"]};opacity:0.08;"></div><div class="decor-glitch-block" style="width:120px;height:60px;top:20%;right:-20px;background:{d["accent"]};"></div><div class="decor-glitch-block" style="width:80px;height:40px;bottom:25%;left:-15px;background:{d["text"]};"></div>'
-    elif d["decor"] == "minimal":
-        decor_html = f'<div class="decor-thin-line" style="top:40px;left:40px;right:40px;height:1px;background:{d["muted"]};"></div><div class="decor-thin-line" style="bottom:40px;left:40px;right:40px;height:1px;background:{d["muted"]};"></div>'
     elif d["decor"] == "retro":
         decor_html = f'<div class="decor-stamp" style="top:20px;right:30px;width:60px;height:60px;border-color:{d["accent"]};transform:rotate(12deg);"></div><div class="decor-ink-ring" style="width:140px;height:140px;bottom:-50px;left:-50px;border-color:{d["accent"]};"></div>'
 
-    shadow = "0 4px 32px rgba(0,0,0,0.06)" if d["decor"] != "cyber" else "0 4px 40px rgba(100,0,200,0.15)"
-    extra = "max-width:480px;min-height:280px;padding:2rem 1.8rem;" if compact else ""
+    shadow = "0 4px 32px rgba(0,0,0,0.06)"
+    extra = "max-width:520px;min-height:280px;padding:2rem 1.8rem;" if compact else ""
 
     html_str = f'''<div class="art-card" style="background:{d["card_bg"]};color:{d["text"]};box-shadow:{shadow};{extra}">
 {decor_html}
-<div class="card-title" style="font-family:{d["font_title"]}!important;">{t_title}</div>
-<div class="card-body" style="font-family:{d["font_body"]}!important;">{t_body}</div>
-<div class="card-foot" style="border-top:1px solid {d["muted"]}33;">
-<span>— {t_footer}</span>
-<div class="card-seal" style="border-color:{d["seal_color"]};color:{d["seal_color"]};">{t_emotion}</div>
+<div style="font-size:1.7rem;font-weight:700;font-family:{d["font_title"]}!important;line-height:1.6;margin-bottom:1rem;letter-spacing:0.06em;">{quote}</div>
+<div style="font-size:0.9rem;color:{d["muted"]};margin-bottom:1.5rem;font-family:{d["font_body"]}!important;">— {source}</div>
+<div style="font-size:1rem;line-height:1.8;font-family:{d["font_body"]}!important;opacity:0.85;">{paraphrase}</div>
+<div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid {d["muted"]}33;display:flex;justify-content:space-between;align-items:center;">
+<span style="font-size:0.85rem;opacity:0.5;">赛博意境 · {style_name}</span>
+<div class="card-seal" style="border-color:{d["seal_color"]};color:{d["seal_color"]};">{emotion}</div>
 </div>
 </div>'''
 

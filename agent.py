@@ -1,4 +1,4 @@
-"""Agent：诗意卡片生成"""
+"""Agent：古典文学卡片生成"""
 
 import json
 from llm_client import chat
@@ -6,13 +6,13 @@ from prompts import STYLES, CARD_PROMPT
 
 
 def generate_card(keyword: str, style_name: str) -> dict:
-    """生成一张艺术卡片"""
-    style = STYLES.get(style_name, STYLES["白色寂静"])
-    prompt = CARD_PROMPT.format(keyword=keyword, style_guide=style["prompt"])
+    style = STYLES.get(style_name, STYLES["唐诗气象"])
+    prompt_text = style["prompt"].replace("{keyword}", keyword)
+    prompt = CARD_PROMPT.format(keyword=keyword, style_guide=prompt_text)
 
     response = chat(
         [{"role": "user", "content": prompt}],
-        temperature=1.0,
+        temperature=0.9,
         max_tokens=400,
     )
 
@@ -20,16 +20,21 @@ def generate_card(keyword: str, style_name: str) -> dict:
     if text.startswith("```"):
         lines = text.split("\n")
         text = "\n".join(lines[1:])
-        if text.endswith("```"):
-            text = text[:-3]
-    text = text.strip()
+        if text.rstrip().endswith("```"):
+            text = text[:text.rfind("```")].strip()
 
     try:
-        return json.loads(text)
+        card = json.loads(text)
+        return {
+            "quote": card.get("quote", ""),
+            "source": card.get("source", ""),
+            "paraphrase": card.get("paraphrase", ""),
+            "emotion": card.get("emotion", ""),
+        }
     except json.JSONDecodeError:
         return {
-            "title": keyword,
-            "text": response[:100],
-            "footer": "— 意境 —",
-            "emotion": "诗意",
+            "quote": "此中有真意，欲辨已忘言",
+            "source": "陶渊明 · 饮酒",
+            "paraphrase": f"关于「{keyword}」，千言万语不如这一句",
+            "emotion": "悠然",
         }
