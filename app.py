@@ -1,4 +1,4 @@
-"""赛博意境 — AI 诗意卡片"""
+"""拾句 — 在古典里遇见此刻"""
 
 import streamlit as st
 import os
@@ -7,7 +7,7 @@ from prompts import STYLES
 from llm_client import check_api_key, reset_client
 
 # ── Page Config ─────────────────────────────────
-st.set_page_config(page_title="赛博意境", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="拾句", page_icon="📜", layout="centered")
 
 # ── Fonts & Base CSS ────────────────────────────
 st.markdown("""
@@ -260,8 +260,8 @@ if "keyword" not in st.session_state:
 # ── Header ──────────────────────────────────────
 st.markdown("""
 <div class="hero">
-    <h1>赛 博 意 境</h1>
-    <p class="sub">输 入 一 个 词 · AI 为 你 造 一 首 诗</p>
+    <h1>拾 句</h1>
+    <p class="sub">一 词 入 · 千 年 应</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -338,7 +338,7 @@ def render_card(card: dict, style_name: str, style: dict, compact: bool = False)
 <div style="font-size:0.9rem;color:{d["muted"]};margin-bottom:1.5rem;font-family:{d["font_body"]}!important;">— {source}</div>
 <div style="font-size:1rem;line-height:1.8;font-family:{d["font_body"]}!important;opacity:0.85;">{paraphrase}</div>
 <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid {d["muted"]}33;display:flex;justify-content:space-between;align-items:center;">
-<span style="font-size:0.85rem;opacity:0.5;">赛博意境 · {style_name}</span>
+<span style="font-size:0.85rem;opacity:0.5;">拾句 · {style_name}</span>
 <div class="card-seal" style="border-color:{d["seal_color"]};color:{d["seal_color"]};">{emotion}</div>
 </div>
 </div>'''
