@@ -1,319 +1,316 @@
-"""赛博室友 — Streamlit Web 界面"""
+"""期末突击教练 — Streamlit App"""
 
 import streamlit as st
 import os
-from simulator import Simulator
-from prompts import AGENT_CONFIGS
+from agent import TutorAgent
 from llm_client import check_api_key, reset_client
 
 # ──────────────────────────────────────────────
-# 页面配置
-# ──────────────────────────────────────────────
 st.set_page_config(
-    page_title="赛博室友 - 302宿舍",
-    page_icon="🏠",
+    page_title="期末突击教练",
+    page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ──────────────────────────────────────────────
-# 自定义 CSS
-# ──────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* 整体背景 */
-    .main .block-container {
-        padding-top: 1rem;
-    }
-
-    /* 聊天气泡 */
-    .chat-bubble {
-        padding: 10px 16px;
-        border-radius: 16px;
-        margin: 6px 0;
-        max-width: 85%;
-        animation: fadeIn 0.3s ease-in;
-        line-height: 1.6;
-    }
-    .chat-bubble.left {
-        background: #f0f2f6;
-        margin-right: auto;
-        border-bottom-left-radius: 4px;
-    }
-    .chat-bubble.right {
-        background: #e3f2fd;
-        margin-left: auto;
-        border-bottom-right-radius: 4px;
-        text-align: right;
-    }
-    .chat-bubble.event {
-        background: #fff3e0;
-        margin: 8px auto;
-        text-align: center;
-        border-radius: 20px;
-        font-weight: 500;
-        max-width: 95%;
-    }
-    .chat-bubble.user-possession {
-        background: #fce4ec;
-        border: 2px dashed #e91e63;
-    }
-
-    /* Agent 名称 */
-    .agent-name {
-        font-weight: 700;
-        font-size: 13px;
-        margin-bottom: 2px;
-    }
-
-    /* Agent 卡片 */
-    .agent-card {
-        background: white;
-        border-radius: 12px;
-        padding: 12px;
-        margin: 8px 0;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-        border-left: 4px solid #ccc;
-    }
-    .agent-card .emoji {
-        font-size: 28px;
-    }
-
-    /* 按钮行 */
-    .button-row button {
-        margin: 4px;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* 隐藏 Streamlit 默认元素 */
+    .main .block-container { padding-top: 1rem; }
+    .stButton button { font-weight: 600; }
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
-
-    /* 对话容器自动滚动 */
-    .chat-container {
-        max-height: 60vh;
-        overflow-y: auto;
-        padding: 10px;
-    }
+    .big-score { font-size: 48px; font-weight: 800; text-align: center; }
+    .pass-tag { padding: 4px 12px; border-radius: 20px; font-weight: 700; display: inline-block; }
+    .pass-tag.safe { background: #d4edda; color: #155724; }
+    .pass-tag.risky { background: #fff3cd; color: #856404; }
+    .pass-tag.dead { background: #f8d7da; color: #721c24; }
 </style>
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────
-# 标题
-# ──────────────────────────────────────────────
-st.title("🏠 赛博室友 — 302宿舍直播间")
-st.caption("4个 AI Agent 模拟真实大学宿舍生活 | MBTI × 多智能体 | 围观 or 附身")
-
-# ──────────────────────────────────────────────
-# API Key 检查
+# API Key
 # ──────────────────────────────────────────────
 if not check_api_key():
-    with st.expander("🔑 请先配置 DeepSeek API Key", expanded=True):
-        api_key = st.text_input(
-            "输入你的 DeepSeek API Key",
-            type="password",
-            placeholder="sk-...",
-            help="从 https://platform.deepseek.com/api_keys 获取"
-        )
+    with st.expander("🔑 配置 API Key", expanded=True):
+        api_key = st.text_input("输入 SiliconFlow API Key", type="password", placeholder="sk-...")
         if api_key:
             os.environ["DEEPSEEK_API_KEY"] = api_key
             import config
             config.DEEPSEEK_API_KEY = api_key
-            reset_client()  # 强制重建客户端
-            st.success("✅ API Key 已设置！刷新中...")
+            reset_client()
+            st.success("✅ 已设置！")
             st.rerun()
-        st.info("💡 API Key 仅保存在本次会话中，不会上传到任何地方")
+        st.info("💡 从 https://cloud.siliconflow.cn 获取")
         st.stop()
 
 # ──────────────────────────────────────────────
-# 初始化 Session State
+# Session State
 # ──────────────────────────────────────────────
-if "sim" not in st.session_state:
-    st.session_state.sim = Simulator()
-if "auto_running" not in st.session_state:
-    st.session_state.auto_running = False
-if "event_pending" not in st.session_state:
-    st.session_state.event_pending = None
+if "agent" not in st.session_state:
+    st.session_state.agent = TutorAgent()
+if "page" not in st.session_state:
+    st.session_state.page = 0
+if "course_done" not in st.session_state:
+    st.session_state.course_done = False
+if "diagnostic_questions" not in st.session_state:
+    st.session_state.diagnostic_questions = ""
+if "diagnostic_done" not in st.session_state:
+    st.session_state.diagnostic_done = False
+if "plan_done" not in st.session_state:
+    st.session_state.plan_done = False
+if "mock_questions" not in st.session_state:
+    st.session_state.mock_questions = ""
+if "mock_done" not in st.session_state:
+    st.session_state.mock_done = False
 
-sim: Simulator = st.session_state.sim
+agent: TutorAgent = st.session_state.agent
+mem = agent.memory
+
+PAGES = ["📋 课程设置", "🔍 知识点诊断", "📅 突击计划", "📝 模拟考试"]
 
 # ──────────────────────────────────────────────
-# 侧边栏 — Agent 信息 + 控制
+# Sidebar
 # ──────────────────────────────────────────────
 with st.sidebar:
-    st.header("👥 302 宿舍成员")
-
-    # 渲染每个 Agent 卡片
-    for name, config in AGENT_CONFIGS.items():
-        agent = sim.agents[name]
-        with st.container():
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                st.markdown(f"<div style='font-size:36px;text-align:center;'>{config['emoji']}</div>",
-                           unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"**{name}** `{config['mbti']}`")
-                st.caption(f"{agent.emotion}")
-
-            # 好感度条
-            if agent.relationships:
-                for other_name, score in agent.relationships.scores.items():
-                    label = agent.relationships.get_relationship_label(other_name)
-                    pct = score / 100
-                    st.markdown(
-                        f"<small>{other_name} {label}</small>",
-                        unsafe_allow_html=True,
-                    )
-                    st.progress(pct)
-
-            st.markdown("<hr style='margin:4px 0'>", unsafe_allow_html=True)
-
-    # ── 控制区 ──
+    st.title("🏥 期末突击教练")
+    st.caption("专治期末来不及复习")
     st.divider()
 
-    # 一轮对话
-    col_a, col_b = st.columns([3, 1])
-    with col_a:
-        if st.button("💬 下一轮对话", use_container_width=True, help="让一位室友自动发言"):
-            result = sim.run_turn()
-            st.rerun()
-    with col_b:
-        n_turns = st.number_input("轮数", 1, 10, 5, label_visibility="collapsed")
+    # 进度指示器
+    for i, name in enumerate(PAGES):
+        done = False
+        if i == 0:
+            done = st.session_state.course_done
+        elif i == 1:
+            done = st.session_state.diagnostic_done
+        elif i == 2:
+            done = st.session_state.plan_done
+        elif i == 3:
+            done = st.session_state.mock_done
 
-    if st.button(f"⏩ 快速推进 {n_turns} 轮", use_container_width=True):
-        with st.spinner(f"室友们正在聊天...({n_turns}轮)"):
-            sim.run_multi_turns(int(n_turns))
+        icon = "✅" if done else ("📍" if i == st.session_state.page else "⬜")
+        st.markdown(f"{icon} {name}")
+
+    st.divider()
+    if mem.course_info:
+        st.caption(f"📚 {mem.course_info.get('name', '')}")
+        st.caption(f"⏰ 剩余 {mem.course_info.get('hours', '?')} 小时")
+        if mem.total_score:
+            st.caption(f"📊 诊断得分：{mem.total_score}/100")
+
+    st.divider()
+    if st.button("🔄 重新开始", use_container_width=True):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.rerun()
-
-    # 随机事件
-    st.divider()
-    if st.button("🎲 触发随机事件", use_container_width=True, type="primary"):
-        with st.spinner("事件发酵中..."):
-            sim.random_event()
-        st.rerun()
-
-    # 附身模式
-    st.divider()
-    st.subheader("👤 附身发言")
-    possession_target = st.selectbox(
-        "选择要附身的室友",
-        list(AGENT_CONFIGS.keys()),
-    )
-    possession_msg = st.text_area(
-        "以他的身份说点什么...",
-        placeholder="比如：兄弟们，我有个大胆的想法！",
-        max_chars=200,
-        height=80,
-    )
-    if st.button("📢 发送（附身模式）", use_container_width=True, disabled=not possession_msg.strip()):
-        sim.user_speak(possession_target, possession_msg.strip())
-        st.rerun()
-
-    # 重置
-    st.divider()
-    if st.button("🔄 重置宿舍", use_container_width=True):
-        st.session_state.sim = Simulator()
-        st.session_state.auto_running = False
-        st.rerun()
-
-    # 导出
-    st.divider()
-    st.caption(f"💾 对话轮数: {sim.turn_count}")
 
 # ──────────────────────────────────────────────
-# 主面板 — 对话展示
+# Page 0: 课程设置
 # ──────────────────────────────────────────────
+if st.session_state.page == 0:
+    st.title("📋 告诉我你的情况")
+    st.caption("越详细，突击计划越精准")
 
-# 欢迎信息
-if len(sim.display_history) == 0:
-    st.info("""
-    👋 **欢迎来到 302 宿舍！**
+    col1, col2 = st.columns(2)
+    with col1:
+        course_name = st.text_input("课程名称", placeholder="例如：计算机网络、高等数学、毛概...")
+        exam_date = st.text_input("考试日期", placeholder="例如：7月5日 或 3天后")
 
-    这里有 4 位性格迥异的 AI 室友：
-    - 🐶 **小明** (ENFP) — 社牛话痨，宿舍气氛组
-    - 🦉 **阿哲** (INTJ) — 理性毒舌，年级第一
-    - 🌿 **小宇** (ISFP) — 温柔敏感，养生达人
-    - 🐒 **老王** (ESTP) — 行动派吃货，社会我王哥
-
-    点击左侧 **「💬 下一轮对话」** 开始围观他们的宿舍生活吧！
-    """)
-
-# 对话流
-chat_col = st.container()
-
-with chat_col:
-    for i, msg in enumerate(sim.display_history):
-        agent_name = msg["agent"]
-        message = msg["message"]
-        emoji = msg["emoji"]
-        color = msg["color"]
-        is_event = msg.get("is_event", False)
-        is_user = msg.get("is_user", False)
-
-        if is_event:
-            # 事件消息 — 居中高亮
-            st.markdown(f"""
-            <div class="chat-bubble event" style="border:2px solid {color}">
-                {emoji} {message}
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            # 普通聊天消息
-            user_tag = "👤[用户附身]" if is_user else ""
-            align_class = "right" if (i % 2 == 0) else "left"
-            bubble_style = "user-possession" if is_user else ""
-
-            with st.chat_message(name=agent_name, avatar=emoji):
-                st.markdown(f"{message}")
-                st.caption(f"{agent_name} · {msg.get('mbti', '')} {user_tag}")
-
-# ──────────────────────────────────────────────
-# 底部快捷操作
-# ──────────────────────────────────────────────
-st.divider()
-col1, col2, col3, col4, col5 = st.columns(5)
-with col1:
-    if st.button("💬 下一轮", use_container_width=True, key="bottom_next"):
-        sim.run_turn()
-        st.rerun()
-with col2:
-    if st.button("⏩ 快速5轮", use_container_width=True, key="bottom_fast"):
-        with st.spinner("聊天中..."):
-            sim.run_multi_turns(5)
-        st.rerun()
-with col3:
-    if st.button("🎲 随机事件", use_container_width=True, key="bottom_event"):
-        sim.random_event()
-        st.rerun()
-with col4:
-    if st.button("🔄 重置", use_container_width=True, key="bottom_reset"):
-        st.session_state.sim = Simulator()
-        st.rerun()
-with col5:
-    if st.button("📋 导出对话", use_container_width=True, key="bottom_export"):
-        export_text = ""
-        for msg in sim.display_history:
-            export_text += f"[{msg['agent']}] {msg['message']}\n"
-        st.download_button(
-            "下载对话记录",
-            export_text,
-            file_name="302宿舍对话记录.txt",
-            mime="text/plain",
+    with col2:
+        available_hours = st.number_input("你能投入多少小时复习？", min_value=1, max_value=100, value=10)
+        topics = st.text_area(
+            "课程包含哪些知识点？",
+            placeholder="随便列，想到什么写什么。\n\n例如：\n- TCP/IP协议\n- 子网划分\n- 路由算法\n- 应用层协议...",
+            height=150,
         )
 
+    if st.button("🚀 开始分析", use_container_width=True, type="primary", disabled=not course_name.strip()):
+        with st.spinner("🏥 急救王老师正在分析你的课程..."):
+            mem.course_info = {
+                "name": course_name.strip(),
+                "exam_date": exam_date.strip() or "未知",
+                "hours": available_hours,
+                "topics": topics.strip() or "（学生未提供）",
+            }
+            result = agent.analyze_course(
+                course_name=course_name.strip(),
+                topics=topics.strip() or "未提供",
+                exam_date=exam_date.strip() or "未知",
+                available_hours=available_hours,
+            )
+            mem.knowledge_map = result
+            st.session_state.course_done = True
+            st.session_state.page = 1
+            st.rerun()
+
 # ──────────────────────────────────────────────
-# 底部自动滚动
+# Page 1: 知识点诊断
 # ──────────────────────────────────────────────
-st.markdown("""
-<script>
-    // 自动滚动到最新消息
-    const chatContainer = window.parent.document.querySelector('.main');
-    if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-</script>
-""", unsafe_allow_html=True)
+elif st.session_state.page == 1:
+    st.title("🔍 知识点诊断")
+
+    tab1, tab2 = st.tabs(["📊 知识地图", "📝 诊断测试"])
+
+    with tab1:
+        st.markdown(mem.knowledge_map)
+        if st.button("👉 开始诊断测试", type="primary"):
+            pass  # just scroll to tab2
+
+    with tab2:
+        if not st.session_state.diagnostic_questions:
+            if st.button("🩺 生成诊断题", type="primary", use_container_width=True):
+                with st.spinner("出题中..."):
+                    questions = agent.generate_diagnostic_quiz(
+                        mem.course_info["name"],
+                        mem.knowledge_map,
+                    )
+                    st.session_state.diagnostic_questions = questions
+                st.rerun()
+        else:
+            st.markdown(st.session_state.diagnostic_questions)
+
+            user_answers = st.text_area(
+                "✍️ 你的作答（逐题写上你的答案）",
+                placeholder="第1题：我选 C\n第2题：我选 A\n第3题：...\n第4题：...",
+                height=200,
+            )
+
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                if st.button("📤 提交批改", type="primary", use_container_width=True,
+                            disabled=not user_answers.strip()):
+                    with st.spinner("批改中..."):
+                        result = agent.grade_diagnostic(
+                            mem.course_info["name"],
+                            st.session_state.diagnostic_questions,
+                            user_answers.strip(),
+                        )
+                        mem.weak_points = result
+                        st.session_state.diagnostic_done = True
+                        # Parse score
+                        import re
+                        score_match = re.search(r'总分[：:]\s*(\d+)', result)
+                        if score_match:
+                            mem.total_score = int(score_match.group(1))
+                    st.rerun()
+            with col2:
+                if st.button("🔄 重新出题", use_container_width=True):
+                    st.session_state.diagnostic_questions = ""
+                    st.rerun()
+
+            if st.session_state.diagnostic_done:
+                st.divider()
+                st.subheader("📊 诊断结果")
+                if mem.total_score:
+                    level = "稳" if mem.total_score >= 70 else ("悬" if mem.total_score >= 40 else "危")
+                    color = "#155724" if mem.total_score >= 70 else ("#856404" if mem.total_score >= 40 else "#721c24")
+                    bg = "#d4edda" if mem.total_score >= 70 else ("#fff3cd" if mem.total_score >= 40 else "#f8d7da")
+                    st.markdown(
+                        f"<div style='text-align:center;padding:16px;background:{bg};border-radius:16px;'>"
+                        f"<span style='font-size:48px;font-weight:800;color:{color};'>{mem.total_score}</span>"
+                        f"<span style='font-size:20px;color:{color};'> / 100</span>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+                st.markdown(mem.weak_points)
+                if st.button("📅 下一步：生成突击计划 →", type="primary"):
+                    st.session_state.page = 2
+                    st.rerun()
+
+# ──────────────────────────────────────────────
+# Page 2: 突击计划
+# ──────────────────────────────────────────────
+elif st.session_state.page == 2:
+    st.title("📅 极限突击计划")
+
+    if not st.session_state.plan_done:
+        with st.spinner("🏥 正在为你量身定制突击计划..."):
+            plan = agent.generate_cram_plan(
+                mem.course_info["name"],
+                mem.course_info["hours"],
+                mem.weak_points,
+                mem.knowledge_map,
+            )
+            mem.study_plan = plan
+            st.session_state.plan_done = True
+        st.rerun()
+
+    st.markdown(mem.study_plan)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔙 返回诊断", use_container_width=True):
+            st.session_state.page = 1
+            st.rerun()
+    with col2:
+        if st.button("📝 下一步：模拟考试 →", type="primary", use_container_width=True):
+            st.session_state.page = 3
+            st.rerun()
+
+# ──────────────────────────────────────────────
+# Page 3: 模拟考试
+# ──────────────────────────────────────────────
+elif st.session_state.page == 3:
+    st.title("📝 考前模拟")
+
+    if not st.session_state.mock_questions:
+        if st.button("🎲 生成模拟卷", type="primary", use_container_width=True):
+            with st.spinner("出卷中..."):
+                exam = agent.generate_mock_exam(
+                    mem.course_info["name"],
+                    mem.weak_points,
+                )
+                st.session_state.mock_questions = exam
+            st.rerun()
+    elif not st.session_state.mock_done:
+        st.markdown(st.session_state.mock_questions)
+
+        user_answers = st.text_area(
+            "✍️ 你的作答",
+            placeholder="第1题：...\n第2题：...\n第3题：...",
+            height=200,
+        )
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            if st.button("📤 提交批改", type="primary", use_container_width=True,
+                        disabled=not user_answers.strip()):
+                with st.spinner("批改中..."):
+                    result = agent.grade_mock_exam(
+                        st.session_state.mock_questions,
+                        user_answers.strip(),
+                    )
+                    st.session_state.mock_done = True
+                    # Store result in memory for display
+                    import re
+                    score_match = re.search(r'总分[：:]\s*(\d+)', result)
+                    if score_match:
+                        mem.total_score = int(score_match.group(1))
+                    # Store result text
+                    st.session_state.mock_result = result
+                st.rerun()
+        with col2:
+            if st.button("🔄 换一套卷", use_container_width=True):
+                st.session_state.mock_questions = ""
+                st.rerun()
+    else:
+        st.subheader("🎯 模拟考成绩")
+        result_text = st.session_state.get("mock_result", "")
+        st.markdown(result_text)
+
+        if st.button("🔙 回头复习计划", use_container_width=True):
+            st.session_state.page = 2
+            st.rerun()
+
+        st.divider()
+        st.success("""
+        ### 🎉 训练完成！
+
+        你已经完成了完整的突击流程：
+        1. ✅ 知识地图分析
+        2. ✅ 薄弱点诊断
+        3. ✅ 个性化突击计划
+        4. ✅ 模拟考试
+
+        **按左侧「🔄 重新开始」可以换一门课继续突击！**
+        """)

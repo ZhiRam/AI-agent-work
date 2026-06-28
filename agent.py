@@ -1,122 +1,130 @@
-"""Agent 类：单个室友的人格、记忆、回复生成"""
+"""Agent 类：期末突击教练"""
 
 from llm_client import chat
-from memory import (
-    ShortTermMemory,
-    LongTermMemory,
-    RelationshipTracker,
-    parse_relationship_markers,
-    clean_response,
-)
-from config import CONTEXT_ROUNDS
+from memory import MemoryStore
+from prompts import TUTOR_PROMPT
 
 
-class Agent:
-    """宿舍室友 Agent"""
+class TutorAgent:
+    """期末突击教练 Agent"""
 
-    def __init__(self, name: str, mbti: str, system_prompt: str, emoji: str, color: str):
-        self.name = name
-        self.mbti = mbti
-        self.system_prompt = system_prompt
-        self.emoji = emoji
-        self.color = color
-        self.emotion = "😊 正常"
+    def __init__(self):
+        self.system_prompt = TUTOR_PROMPT
+        self.memory = MemoryStore()
 
-        self.short_term = ShortTermMemory()
-        self.long_term = LongTermMemory()
-        self.relationships: RelationshipTracker | None = None
+    def _call(self, user_message: str, temperature: float = 0.7) -> str:
+        """调用 LLM"""
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        return chat(messages, temperature=temperature)
 
-    def init_relationships(self, other_names: list[str]):
-        """初始化好感度矩阵（需在所有 Agent 创建后调用）"""
-        self.relationships = RelationshipTracker(self.name, other_names)
+    # ─── 阶段 1：分析课程 ───
+    def analyze_course(self, course_name: str, topics: str, exam_date: str, available_hours: int) -> str:
+        """分析课程，生成知识地图"""
+        prompt = f"""学生要突击复习【{course_name}】，考试日期：{exam_date}，可用复习时间：约{available_hours}小时。
 
-    def generate_response(self, recent_history: list[dict], event_context: str | None = None) -> str:
-        """生成当前 Agent 的回复
+课程涉及的知识范围（学生自己列的）：
+{topics}
 
-        Args:
-            recent_history: 最近对话历史，格式 [{"agent": str, "message": str}, ...]
-            event_context: 当前注入的事件（如有）
+请完成以下工作：
+1. 把这些知识点整理成树状结构（用 Markdown 列表），标注每个知识点的：
+   - 重要度（⭐⭐⭐必考 / ⭐⭐常考 / ⭐偶尔）
+   - 难度（难/中/易）
+   - 建议时间分配
+2. 估算总复习时间是否够用，给一个整体判断
+3. 指出 3 个"绝对不能丢分"的核心考点"""
+        return self._call(prompt)
 
-        Returns:
-            Agent 的回复文本（已清理标记）
-        """
-        messages = [{"role": "system", "content": self.system_prompt}]
+    # ─── 阶段 2：出诊断题 ───
+    def generate_diagnostic_quiz(self, course_name: str, knowledge_map: str, question_count: int = 4) -> str:
+        """生成诊断题"""
+        prompt = f"""课程：【{course_name}】
+知识地图：
+{knowledge_map}
 
-        # 1. 注入长期记忆摘要
-        ltm = self.long_term.get_summary()
-        if ltm:
-            messages.append({"role": "system", "content": ltm})
+请出 {question_count} 道诊断题，用来测试学生对核心考点的掌握程度。
 
-        # 2. 注入短期记忆
-        stm = self.short_term.get_context_text(n=10)
-        if stm:
-            messages.append({"role": "system", "content": stm})
+要求：
+- 前 2 道选择题（4 个选项），后 2 道简答题
+- 覆盖不同难度和知识点
+- 每题标注【难度】【考点】【分值】
+- 题目后面不要直接给答案，用 <!--答案:...--> 隐藏
 
-        # 3. 注入好感度上下文
-        if self.relationships:
-            rel = self.relationships.get_context()
-            messages.append({"role": "system", "content": rel})
+格式：
+### 第1题（选择题）【难度：中】【考点：XXX】【分值：10】
+题目内容...
+A. xxx  B. xxx  C. xxx  D. xxx
+<!--答案:B-->
+"""
+        return self._call(prompt, temperature=0.8)
 
-        # 4. 注入当前事件
-        if event_context:
-            messages.append({"role": "system", "content": f"⚡【刚刚发生的事】{event_context}\n请在你的回复中自然地对此事做出反应。"})
+    # ─── 阶段 3：批改诊断 ───
+    def grade_diagnostic(self, course_name: str, questions: str, user_answers: str) -> str:
+        """批改诊断题，输出薄弱点分析"""
+        prompt = f"""课程：【{course_name}】
 
-        # 5. 注入最近的宿舍对话
-        context_rounds = recent_history[-(CONTEXT_ROUNDS * 2):]  # 保留最近几轮
-        for entry in context_rounds:
-            if entry["agent"] == self.name:
-                messages.append({"role": "assistant", "content": entry["message"]})
-            else:
-                messages.append({"role": "user", "content": f"{entry['agent']}说：{entry['message']}"})
+诊断题和正确答案：
+{questions}
 
-        # 6. 发言提示
-        messages.append({
-            "role": "user",
-            "content": f"现在轮到{self.name}说话了。请以你的身份自然地回应（1-3句话），可以接话、开启新话题、或者简短回应。"
-        })
+学生的作答：
+{user_answers}
 
-        # 调用 LLM
-        raw_response = chat(messages)
+请：
+1. 逐题批改，给分，指出对/错在哪里（简洁）
+2. 总分统计（满分100）
+3. 根据错题分析薄弱知识点，列出"薄弱点清单"
+4. 给出针对性建议：哪些知识点必须优先补"""
+        return self._call(prompt)
 
-        # 解析好感度变化
-        if self.relationships:
-            markers = parse_relationship_markers(raw_response)
-            for target_name, delta in markers:
-                self.relationships.update(target_name, delta)
+    # ─── 阶段 4：生成突击计划 ───
+    def generate_cram_plan(self, course_name: str, available_hours: int, weak_points: str,
+                           knowledge_map: str) -> str:
+        """生成突击复习计划"""
+        prompt = f"""课程：【{course_name}】
+可用时间：{available_hours} 小时
+知识地图：
+{knowledge_map}
+薄弱点：
+{weak_points}
 
-        # 清理回复中的标记
-        clean = clean_response(raw_response)
+请制定一份"极限突击计划"，要求：
+1. 把{available_hours}小时拆成具体的时间块
+2. 每个时间块明确：复习哪个知识点、怎么复习、预期产出
+3. 薄弱点分配更多时间，但也要兼顾必考点的巩固
+4. 最后留 30 分钟做"考前快速浏览清单"
+5. 用 Markdown 表格呈现计划
 
-        # 存入短期记忆
-        self.short_term.add({"type": "speak", "agent": self.name, "content": clean})
+风格：像学长/学姐帮你划重点，直接、高效。"""
+        return self._call(prompt)
 
-        # 判断是否存入长期记忆
-        self.long_term.add_if_important(clean)
+    # ─── 阶段 5：模拟考试 ───
+    def generate_mock_exam(self, course_name: str, weak_points: str, question_count: int = 3) -> str:
+        """生成模拟考题（重点考察薄弱点）"""
+        prompt = f"""课程：【{course_name}】
+学生薄弱点：{weak_points}
 
-        # 更新情绪状态（简单规则）
-        self._update_emotion(clean)
+请出 {question_count} 道模拟考题。要求：
+- 重点考察学生的薄弱知识点
+- 1道选择题 + 1道简答题 + 1道综合应用题
+- 题目要有期末考试的真实感
+- 每题标注【难度】【考点】【分值】
+- 隐藏答案用 <!--答案:...-->
 
-        return clean
+这是考前最后一次检测，题目质量要高！"""
+        return self._call(prompt, temperature=0.8)
 
-    def hear(self, speaker_name: str, message: str):
-        """听到其他 Agent 的发言"""
-        self.short_term.add({"type": "hear", "agent": speaker_name, "content": message})
-        # 也检查是否需要存入长期记忆
-        self.long_term.add_if_important(f"{speaker_name}说：{message}")
+    def grade_mock_exam(self, questions: str, user_answers: str) -> str:
+        """批改模拟考"""
+        prompt = f"""模拟考题和答案：
+{questions}
 
-    def hear_event(self, event_text: str):
-        """感知到事件"""
-        self.short_term.add({"type": "event", "agent": "系统", "content": event_text})
+学生作答：
+{user_answers}
 
-    def _update_emotion(self, last_message: str):
-        """根据发言内容简单更新情绪标签"""
-        positive = any(w in last_message for w in ["哈哈", "开心", "好耶", "nice", "牛逼", "太爽", "喜欢", "谢谢"])
-        negative = any(w in last_message for w in ["烦", "无语", "气死", "难受", "崩溃", "算了", "随便", "唉"])
-        if positive and not negative:
-            self.emotion = "😄 开心"
-        elif negative and not positive:
-            self.emotion = "😞 低落"
-        elif "怼" in last_message or "毒舌" in last_message:
-            self.emotion = "😏 嫌弃"
-        else:
-            self.emotion = "😊 正常"
+请：
+1. 逐题批改打分
+2. 总分 + 等级（稳过/有点悬/需要奇迹）
+3. 给考前最后3条建议（简洁有力）"""
+        return self._call(prompt)
