@@ -46,5 +46,6 @@ def chat(messages: list[dict], temperature: float = TEMPERATURE) -> str:
 
 
 def check_api_key() -> bool:
-    """检查 API key 是否已配置"""
-    return bool(DEEPSEEK_API_KEY)
+    """检查 API key 是否已配置（运行时读取，支持动态更新）"""
+    import config
+    return bool(config.DEEPSEEK_API_KEY)
