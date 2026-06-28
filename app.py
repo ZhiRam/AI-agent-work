@@ -314,56 +314,39 @@ if not st.session_state.cards:
 # ── Card Renderer ───────────────────────────────
 def render_card(card: dict, style_name: str, style: dict, compact: bool = False):
     """渲染一张艺术卡片"""
-    decor = style["decor"]
-    seal_color = style["seal_color"]
-    text_color = style["text"]
-    accent = style["accent"]
-    muted = style["muted"]
-    title_font = style["font_title"]
-    body_font = style["font_body"]
+    import html as html_mod
+    d = style
+    # Escape all card text to prevent HTML injection
+    t_title = html_mod.escape(card.get("title", ""))
+    t_body = html_mod.escape(card.get("text", ""))
+    t_footer = html_mod.escape(card.get("footer", ""))
+    t_emotion = html_mod.escape(card.get("emotion", "")[:2])
 
-    # Decorative elements
+    # Decorative elements based on style
     decor_html = ""
-    if decor == "ink":
-        decor_html = f"""
-        <div class="decor-ink-ring" style="width:180px;height:180px;top:-60px;right:-60px;border-color:{text_color};"></div>
-        <div class="decor-ink-ring" style="width:100px;height:100px;bottom:-30px;left:-30px;border-color:{text_color};"></div>
-        <div class="decor-ink-dot" style="width:300px;height:300px;top:20%;left:-100px;background:{accent};"></div>"""
-    elif decor == "cyber":
-        decor_html = f"""
-        <div class="decor-scanline" style="top:30%;background:{accent};"></div>
-        <div class="decor-scanline" style="top:70%;background:{accent};opacity:0.08;"></div>
-        <div class="decor-glitch-block" style="width:120px;height:60px;top:20%;right:-20px;background:{accent};"></div>
-        <div class="decor-glitch-block" style="width:80px;height:40px;bottom:25%;left:-15px;background:{text_color};"></div>"""
-    elif decor == "minimal":
-        decor_html = f"""
-        <div class="decor-thin-line" style="top:40px;left:40px;right:40px;height:1px;background:{muted};"></div>
-        <div class="decor-thin-line" style="bottom:40px;left:40px;right:40px;height:1px;background:{muted};"></div>"""
-    elif decor == "retro":
-        decor_html = f"""
-        <div class="decor-stamp" style="top:20px;right:30px;width:60px;height:60px;border-color:{accent};transform:rotate(12deg);"></div>
-        <div class="decor-ink-ring" style="width:140px;height:140px;bottom:-50px;left:-50px;border-color:{accent};"></div>"""
+    if d["decor"] == "ink":
+        decor_html = f'<div class="decor-ink-ring" style="width:180px;height:180px;top:-60px;right:-60px;border-color:{d["text"]};"></div><div class="decor-ink-ring" style="width:100px;height:100px;bottom:-30px;left:-30px;border-color:{d["text"]};"></div><div class="decor-ink-dot" style="width:300px;height:300px;top:20%;left:-100px;background:{d["accent"]};"></div>'
+    elif d["decor"] == "cyber":
+        decor_html = f'<div class="decor-scanline" style="top:30%;background:{d["accent"]};"></div><div class="decor-scanline" style="top:70%;background:{d["accent"]};opacity:0.08;"></div><div class="decor-glitch-block" style="width:120px;height:60px;top:20%;right:-20px;background:{d["accent"]};"></div><div class="decor-glitch-block" style="width:80px;height:40px;bottom:25%;left:-15px;background:{d["text"]};"></div>'
+    elif d["decor"] == "minimal":
+        decor_html = f'<div class="decor-thin-line" style="top:40px;left:40px;right:40px;height:1px;background:{d["muted"]};"></div><div class="decor-thin-line" style="bottom:40px;left:40px;right:40px;height:1px;background:{d["muted"]};"></div>'
+    elif d["decor"] == "retro":
+        decor_html = f'<div class="decor-stamp" style="top:20px;right:30px;width:60px;height:60px;border-color:{d["accent"]};transform:rotate(12deg);"></div><div class="decor-ink-ring" style="width:140px;height:140px;bottom:-50px;left:-50px;border-color:{d["accent"]};"></div>'
 
-    # Shadow
-    shadow = "0 4px 32px rgba(0,0,0,0.06)" if decor != "cyber" else "0 4px 40px rgba(100,0,200,0.15)"
+    shadow = "0 4px 32px rgba(0,0,0,0.06)" if d["decor"] != "cyber" else "0 4px 40px rgba(100,0,200,0.15)"
+    extra = "max-width:480px;min-height:280px;padding:2rem 1.8rem;" if compact else ""
 
-    h = """<div class="art-card" style="
-        background: """ + style["card_bg"] + """;
-        color: """ + text_color + """;
-        box-shadow: """ + shadow + """;
-        """ + ("max-width:480px;min-height:280px;padding:2rem 1.8rem;" if compact else "") + """
-    ">""" + decor_html + """
-        <div class="card-title" style="font-family:""" + title_font + """!important;">""" + card.get("title", "") + """</div>
-        <div class="card-body" style="font-family:""" + body_font + """!important;">""" + card.get("text", "") + """</div>
-        <div class="card-foot" style="border-top:1px solid """ + muted + """33;">
-            <span>— """ + card.get("footer", "") + """</span>
-            <div class="card-seal" style="border-color:""" + seal_color + """;color:""" + seal_color + """;">
-                """ + card.get("emotion", "")[:2] + """
-            </div>
-        </div>
-    </div>"""
+    html_str = f'''<div class="art-card" style="background:{d["card_bg"]};color:{d["text"]};box-shadow:{shadow};{extra}">
+{decor_html}
+<div class="card-title" style="font-family:{d["font_title"]}!important;">{t_title}</div>
+<div class="card-body" style="font-family:{d["font_body"]}!important;">{t_body}</div>
+<div class="card-foot" style="border-top:1px solid {d["muted"]}33;">
+<span>— {t_footer}</span>
+<div class="card-seal" style="border-color:{d["seal_color"]};color:{d["seal_color"]};">{t_emotion}</div>
+</div>
+</div>'''
 
-    st.markdown(h, unsafe_allow_html=True)
+    st.markdown(html_str, unsafe_allow_html=True)
 
 # ── Generate ────────────────────────────────────
 kw = st.session_state.keyword.strip()
