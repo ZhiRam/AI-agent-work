@@ -2,8 +2,15 @@
 
 import os
 
-# DeepSeek API 配置
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+# DeepSeek API 配置（优先级：环境变量 > Streamlit secrets）
+_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+if not _api_key:
+    try:
+        import streamlit as st
+        _api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+    except Exception:
+        pass
+DEEPSEEK_API_KEY = _api_key
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 
