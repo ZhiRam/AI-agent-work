@@ -2,8 +2,28 @@
 
 import streamlit as st
 import os
+import io
+from PyPDF2 import PdfReader
 from agent import TutorAgent
 from llm_client import check_api_key, reset_client
+
+# ──────────────────────────────────────────────
+# PDF 工具函数
+# ──────────────────────────────────────────────
+def extract_pdf_text(uploaded_file) -> str:
+    """从上传的 PDF 文件中提取文本"""
+    reader = PdfReader(uploaded_file)
+    text_parts = []
+    total_chars = 0
+    max_chars = 10000  # 最多提取10000字
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text_parts.append(page_text)
+            total_chars += len(page_text)
+            if total_chars > max_chars:
+                break
+    return "\n\n".join(text_parts)
 
 # ──────────────────────────────────────────────
 st.set_page_config(
@@ -115,29 +135,65 @@ if st.session_state.page == 0:
     with col1:
         course_name = st.text_input("课程名称", placeholder="例如：计算机网络、高等数学、毛概...")
         exam_date = st.text_input("考试日期", placeholder="例如：7月5日 或 3天后")
+        available_hours = st.number_input("你能投入多少小时复习？", min_value=1, max_value=100, value=10)
 
     with col2:
-        available_hours = st.number_input("你能投入多少小时复习？", min_value=1, max_value=100, value=10)
+        uploaded_files = st.file_uploader(
+            "📄 上传课件 PDF（自动提取知识点）",
+            type="pdf",
+            accept_multiple_files=True,
+            help="支持同时上传多个PDF，自动合并分析",
+        )
         topics = st.text_area(
-            "课程包含哪些知识点？",
+            "或者手动输入知识点（也可和PDF一起用，互相补充）",
             placeholder="随便列，想到什么写什么。\n\n例如：\n- TCP/IP协议\n- 子网划分\n- 路由算法\n- 应用层协议...",
-            height=150,
+            height=130,
         )
 
-    if st.button("🚀 开始分析", use_container_width=True, type="primary", disabled=not course_name.strip()):
-        with st.spinner("🏥 急救王老师正在分析你的课程..."):
+    # 预览 PDF 提取内容
+    pdf_text = ""
+    if uploaded_files:
+        with st.expander(f"📄 已上传 {len(uploaded_files)} 个 PDF，点击预览提取内容"):
+            for f in uploaded_files:
+                text = extract_pdf_text(f)
+                pdf_text += text + "\n\n"
+                st.caption(f"**{f.name}** — 提取 {len(text)} 字")
+                with st.container(height=120):
+                    st.text(text[:500] + ("..." if len(text) > 500 else ""))
+
+    has_content = bool(course_name.strip()) and (bool(topics.strip()) or bool(pdf_text))
+
+    if st.button("🚀 开始分析", use_container_width=True, type="primary", disabled=not has_content):
+        with st.spinner("🏥 急救王老师正在分析..."):
+            source = topics.strip() if topics.strip() else ""
+            if pdf_text:
+                source += ("\n\n[PDF课件内容]\n" + pdf_text[:8000])
+
             mem.course_info = {
                 "name": course_name.strip(),
                 "exam_date": exam_date.strip() or "未知",
                 "hours": available_hours,
-                "topics": topics.strip() or "（学生未提供）",
+                "topics": source or "（未提供）",
+                "has_pdf": bool(pdf_text),
             }
-            result = agent.analyze_course(
-                course_name=course_name.strip(),
-                topics=topics.strip() or "未提供",
-                exam_date=exam_date.strip() or "未知",
-                available_hours=available_hours,
-            )
+
+            if pdf_text and not topics.strip():
+                # 纯 PDF 上传：用 PDF 专用分析
+                result = agent.analyze_pdf(
+                    course_name=course_name.strip(),
+                    pdf_text=pdf_text,
+                    exam_date=exam_date.strip() or "未知",
+                    available_hours=available_hours,
+                )
+            else:
+                # 手动输入或混合：用通用分析
+                result = agent.analyze_course(
+                    course_name=course_name.strip(),
+                    topics=source or "未提供",
+                    exam_date=exam_date.strip() or "未知",
+                    available_hours=available_hours,
+                )
+
             mem.knowledge_map = result
             st.session_state.course_done = True
             st.session_state.page = 1

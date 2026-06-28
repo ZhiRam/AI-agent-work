@@ -20,6 +20,29 @@ class TutorAgent:
         ]
         return chat(messages, temperature=temperature)
 
+    # ─── 阶段 0：分析 PDF 课件 ───
+    def analyze_pdf(self, course_name: str, pdf_text: str, exam_date: str, available_hours: int) -> str:
+        """分析上传的 PDF 课件，自动提取知识点并生成知识地图"""
+        # 截断过长文本（保留前8000字）
+        text = pdf_text[:8000]
+        prompt = f"""学生上传了【{course_name}】的课件 PDF，考试日期：{exam_date}，可用复习时间：约{available_hours}小时。
+
+以下是课件内容：
+---
+{text}
+---
+
+请完成：
+1. 从课件中提取所有知识点，整理成树状结构（Markdown列表）
+2. 标注每个知识点的：
+   - 重要度（⭐⭐⭐必考 / ⭐⭐常考 / ⭐偶尔）——根据课件篇幅和强调程度判断
+   - 难度（难/中/易）
+3. 指出 3 个"绝对不能丢分"的核心考点
+4. 估算总复习时间是否够用
+
+注意：如果课件内容被截断了，请基于已有内容尽力分析。"""
+        return self._call(prompt)
+
     # ─── 阶段 1：分析课程 ───
     def analyze_course(self, course_name: str, topics: str, exam_date: str, available_hours: int) -> str:
         """分析课程，生成知识地图"""
