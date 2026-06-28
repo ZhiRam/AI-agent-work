@@ -1,71 +1,105 @@
-"""期末突击教练 — Streamlit App"""
+"""赛博意境 — AI 艺术卡片生成器"""
 
 import streamlit as st
 import os
-import io
-import base64
-import fitz  # pymupdf
-from PyPDF2 import PdfReader
-from agent import TutorAgent
+from agent import generate_card
+from prompts import STYLE_COLORS, STYLE_PROMPTS
 from llm_client import check_api_key, reset_client
 
 # ──────────────────────────────────────────────
-# PDF 工具函数
-# ──────────────────────────────────────────────
-MAX_VISION_PAGES = 6  # 视觉模型最多分析的页数
-
-
-def extract_pdf_text(uploaded_file) -> str:
-    """从上传的 PDF 文件中提取文本（文字型PDF）"""
-    reader = PdfReader(uploaded_file)
-    text_parts = []
-    total_chars = 0
-    max_chars = 10000
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text_parts.append(page_text)
-            total_chars += len(page_text)
-            if total_chars > max_chars:
-                break
-    return "\n\n".join(text_parts)
-
-
-def pdf_to_images(uploaded_file, max_pages: int = MAX_VISION_PAGES) -> list[str]:
-    """将 PDF 页面转为 base64 编码的图片列表（用于视觉模型）"""
-    uploaded_file.seek(0)
-    pdf_bytes = uploaded_file.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    images = []
-    for i, page in enumerate(doc):
-        if i >= max_pages:
-            break
-        pix = page.get_pixmap(dpi=150)
-        img_bytes = pix.tobytes("png")
-        img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-        images.append(img_b64)
-    doc.close()
-    return images
-
-# ──────────────────────────────────────────────
-st.set_page_config(
-    page_title="期末突击教练",
-    page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="赛博意境", page_icon="🎨", layout="centered")
 
 st.markdown("""
 <style>
-    .main .block-container { padding-top: 1rem; }
-    .stButton button { font-weight: 600; }
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    .big-score { font-size: 48px; font-weight: 800; text-align: center; }
-    .pass-tag { padding: 4px 12px; border-radius: 20px; font-weight: 700; display: inline-block; }
-    .pass-tag.safe { background: #d4edda; color: #155724; }
-    .pass-tag.risky { background: #fff3cd; color: #856404; }
-    .pass-tag.dead { background: #f8d7da; color: #721c24; }
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
+    .main .block-container { padding: 2rem 1rem; max-width: 800px; }
+    #MainMenu, footer { visibility: hidden; }
+
+    .card {
+        padding: 40px 36px;
+        border-radius: 20px;
+        margin: 20px 0;
+        min-height: 320px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.4s ease;
+        box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+    }
+    .card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 60px rgba(0,0,0,0.18);
+    }
+
+    .card-title {
+        font-size: 2.4em;
+        font-weight: 700;
+        margin-bottom: 24px;
+        letter-spacing: 0.08em;
+        line-height: 1.3;
+    }
+    .card-text {
+        font-size: 1.3em;
+        line-height: 2;
+        margin-bottom: 28px;
+        opacity: 0.9;
+        flex-grow: 1;
+    }
+    .card-footer {
+        font-size: 0.95em;
+        opacity: 0.6;
+        letter-spacing: 0.05em;
+        border-top: 1px solid;
+        padding-top: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .emotion-tag {
+        padding: 4px 16px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        letter-spacing: 0.05em;
+        border: 1px solid;
+        opacity: 0.7;
+    }
+
+    /* 装饰元素 */
+    .card::before {
+        content: '';
+        position: absolute;
+        top: -60px;
+        right: -60px;
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        opacity: 0.06;
+        pointer-events: none;
+    }
+    .card.ink::before { background: #3d3226; }
+    .card.cyber::before { background: #00ffcc; }
+    .card.minimal::before { background: #999; }
+    .card.retro::before { background: #8b6914; }
+
+    /* 入场动画 */
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .card { animation: fadeUp 0.6s ease-out; }
+
+    /* 输入区 */
+    .input-section {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    .big-input input {
+        font-size: 1.3em !important;
+        text-align: center !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,354 +116,128 @@ if not check_api_key():
             reset_client()
             st.success("✅ 已设置！")
             st.rerun()
-        st.info("💡 从 https://cloud.siliconflow.cn 获取")
         st.stop()
+
+# ──────────────────────────────────────────────
+# 主界面
+# ──────────────────────────────────────────────
+
+st.markdown("""
+<div style="text-align:center; margin-bottom:10px;">
+    <h1 style="font-size:3em; font-weight:800; letter-spacing:0.1em; margin-bottom:0;">赛 博 意 境</h1>
+    <p style="color:#888; font-size:1em;">输入一个词，AI 为你造一张诗意卡片</p>
+</div>
+""", unsafe_allow_html=True)
+
+# 输入区
+col1, col2, col3 = st.columns([2, 1, 1])
+with col1:
+    keyword = st.text_input(
+        "你的关键词",
+        placeholder="比如：夏天、暗恋、失眠、故乡、自由...",
+        label_visibility="collapsed",
+        key="keyword_input",
+    )
+with col2:
+    style = st.selectbox(
+        "风格",
+        list(STYLE_PROMPTS.keys()),
+        label_visibility="collapsed",
+    )
+with col3:
+    generate_btn = st.button("✨ 生成卡片", use_container_width=True, type="primary")
+
+# ──────────────────────────────────────────────
+# 示例关键词
+# ──────────────────────────────────────────────
+examples = ["夏天", "暗恋", "失眠", "故乡", "自由", "孤独", "毕业", "远方", "初恋", "月亮"]
+
+if not generate_btn and not st.session_state.get("cards"):
+    st.markdown("<div style='text-align:center; margin:16px 0;'>", unsafe_allow_html=True)
+    st.caption("💡 试试这些关键词：")
+    cols = st.columns(len(examples))
+    for i, ex in enumerate(examples):
+        with cols[i]:
+            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+                st.session_state.keyword = ex
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────
 # Session State
 # ──────────────────────────────────────────────
-if "agent" not in st.session_state:
-    st.session_state.agent = TutorAgent()
-if "page" not in st.session_state:
-    st.session_state.page = 0
-if "course_done" not in st.session_state:
-    st.session_state.course_done = False
-if "diagnostic_questions" not in st.session_state:
-    st.session_state.diagnostic_questions = ""
-if "diagnostic_done" not in st.session_state:
-    st.session_state.diagnostic_done = False
-if "plan_done" not in st.session_state:
-    st.session_state.plan_done = False
-if "mock_questions" not in st.session_state:
-    st.session_state.mock_questions = ""
-if "mock_done" not in st.session_state:
-    st.session_state.mock_done = False
+if "cards" not in st.session_state:
+    st.session_state.cards = {}  # {style: card_dict}
 
-agent: TutorAgent = st.session_state.agent
-mem = agent.memory
-
-PAGES = ["📋 课程设置", "🔍 知识点诊断", "📅 突击计划", "📝 模拟考试"]
+# 预填充输入框
+if "keyword" in st.session_state:
+    # 用 js 没法改，手动提示
+    pass
 
 # ──────────────────────────────────────────────
-# Sidebar
+# 生成卡片
 # ──────────────────────────────────────────────
-with st.sidebar:
-    st.title("🏥 期末突击教练")
-    st.caption("专治期末来不及复习")
+actual_keyword = keyword or st.session_state.get("keyword", "")
+
+if generate_btn and actual_keyword.strip():
+    with st.spinner(f"🎨 正在为你创作「{style}」风格卡片..."):
+        try:
+            card = generate_card(actual_keyword.strip(), style)
+            st.session_state.cards[style] = card
+            st.session_state.keyword = actual_keyword.strip()
+        except Exception as e:
+            st.error(f"生成失败：{e}")
+
+# ──────────────────────────────────────────────
+# 显示卡片
+# ──────────────────────────────────────────────
+if st.session_state.cards:
     st.divider()
 
-    # 进度指示器
-    for i, name in enumerate(PAGES):
-        done = False
-        if i == 0:
-            done = st.session_state.course_done
-        elif i == 1:
-            done = st.session_state.diagnostic_done
-        elif i == 2:
-            done = st.session_state.plan_done
-        elif i == 3:
-            done = st.session_state.mock_done
+    styles_to_show = list(st.session_state.cards.keys())
 
-        icon = "✅" if done else ("📍" if i == st.session_state.page else "⬜")
-        st.markdown(f"{icon} {name}")
+    for s in styles_to_show:
+        card = st.session_state.cards[s]
+        colors = STYLE_COLORS[s]
+        css_class = {"水墨": "ink", "赛博朋克": "cyber", "极简": "minimal", "复古": "retro"}.get(s, "")
 
+        # 生成卡片 HTML
+        st.markdown(f"""
+        <div class="card {css_class}" style="
+            background: {colors['bg']};
+            color: {colors['text']};
+            font-family: {colors['font']};
+        ">
+            <div class="card-title">{card.get('title', '')}</div>
+            <div class="card-text">{card.get('text', '')}</div>
+            <div class="card-footer" style="border-color:{colors['accent']};">
+                <span>— {card.get('footer', '')}</span>
+                <span class="emotion-tag" style="border-color:{colors['accent']};">{card.get('emotion', '')}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.caption(f"🎨 风格：{' | '.join(styles_to_show)} | 📸 截图保存即可分享")
+
+# ──────────────────────────────────────────────
+# 底部：多风格一键生成
+# ──────────────────────────────────────────────
+if st.session_state.cards:
     st.divider()
-    if mem.course_info:
-        st.caption(f"📚 {mem.course_info.get('name', '')}")
-        st.caption(f"⏰ 剩余 {mem.course_info.get('hours', '?')} 小时")
-        if mem.total_score:
-            st.caption(f"📊 诊断得分：{mem.total_score}/100")
+    st.markdown("### 🎭 换风格再看看？")
+    remaining = [s for s in STYLE_PROMPTS.keys() if s not in st.session_state.cards]
+    if remaining:
+        cols = st.columns(len(remaining))
+        for i, s in enumerate(remaining):
+            with cols[i]:
+                if st.button(f"生成「{s}」风格", key=f"style_{s}", use_container_width=True):
+                    with st.spinner(f"创作中..."):
+                        kw = st.session_state.get("keyword", "")
+                        card = generate_card(kw, s)
+                        st.session_state.cards[s] = card
+                    st.rerun()
 
-    st.divider()
-    if st.button("🔄 重新开始", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+    if st.button("🔄 清空重新开始", use_container_width=True):
+        st.session_state.cards = {}
+        st.session_state.keyword = ""
         st.rerun()
-
-# ──────────────────────────────────────────────
-# Page 0: 课程设置
-# ──────────────────────────────────────────────
-if st.session_state.page == 0:
-    st.title("📋 告诉我你的情况")
-    st.caption("越详细，突击计划越精准")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        course_name = st.text_input("课程名称", placeholder="例如：计算机网络、高等数学、毛概...")
-        exam_date = st.text_input("考试日期", placeholder="例如：7月5日 或 3天后")
-        available_hours = st.number_input("你能投入多少小时复习？", min_value=1, max_value=100, value=10)
-
-    with col2:
-        uploaded_files = st.file_uploader(
-            "📄 上传课件 PDF（自动提取知识点）",
-            type="pdf",
-            accept_multiple_files=True,
-            help="支持同时上传多个PDF，自动合并分析",
-        )
-        topics = st.text_area(
-            "或者手动输入知识点（也可和PDF一起用，互相补充）",
-            placeholder="随便列，想到什么写什么。\n\n例如：\n- TCP/IP协议\n- 子网划分\n- 路由算法\n- 应用层协议...",
-            height=130,
-        )
-
-    # 预览 PDF 提取内容
-    pdf_text = ""
-    pdf_images_list = []  # 用于视觉模型的图片
-    use_vision = False
-
-    if uploaded_files:
-        with st.expander(f"📄 已上传 {len(uploaded_files)} 个 PDF，点击预览提取内容"):
-            for f in uploaded_files:
-                text = extract_pdf_text(f)
-                text_len = len(text.strip())
-                pdf_text += text + "\n\n"
-
-                if text_len < 100:
-                    # 文字太少 → 可能是扫描版/图片型 PDF → 用视觉模型
-                    st.warning(f"⚠️ **{f.name}** 提取文字仅 {text_len} 字，判定为图片型PDF，将使用视觉模型读取")
-                    try:
-                        imgs = pdf_to_images(f)
-                        pdf_images_list.extend(imgs)
-                        use_vision = True
-                        st.success(f"✅ 已转换 {len(imgs)} 页为图片，将发送给视觉模型分析")
-                        # 显示第一页预览
-                        st.image(f"data:image/png;base64,{imgs[0]}",
-                                caption=f"{f.name} 第1页预览", width=300)
-                    except Exception as e:
-                        st.error(f"转换失败：{e}")
-                else:
-                    st.caption(f"📝 **{f.name}** — 提取 {text_len} 字（文字型PDF）")
-                    with st.container(height=120):
-                        st.text(text[:500] + ("..." if len(text) > 500 else ""))
-
-    has_content = bool(course_name.strip()) and (bool(topics.strip()) or bool(pdf_text) or bool(pdf_images_list))
-
-    if st.button("🚀 开始分析", use_container_width=True, type="primary", disabled=not has_content):
-        if use_vision and pdf_images_list:
-            # 图片型 PDF → 视觉模型
-            with st.spinner(f"👁️ 视觉模型正在读取 {len(pdf_images_list)} 页课件..."):
-                mem.course_info = {
-                    "name": course_name.strip(),
-                    "exam_date": exam_date.strip() or "未知",
-                    "hours": available_hours,
-                    "topics": f"[图片型PDF，共{len(pdf_images_list)}页]",
-                    "has_pdf": True,
-                    "is_vision": True,
-                }
-                result = agent.analyze_pdf_vision(
-                    course_name=course_name.strip(),
-                    page_images=pdf_images_list,
-                    exam_date=exam_date.strip() or "未知",
-                    available_hours=available_hours,
-                )
-                # 也可补充手动输入的知识点
-                if topics.strip():
-                    extra_prompt = f"补充知识点：{topics.strip()}\n请把这些也整合进上面的知识地图。"
-                    result += "\n\n---\n" + agent._call(extra_prompt)
-        else:
-            # 文字型 PDF 或手动输入
-            with st.spinner("🏥 急救王老师正在分析..."):
-                source = topics.strip() if topics.strip() else ""
-                if pdf_text:
-                    source += ("\n\n[PDF课件内容]\n" + pdf_text[:8000])
-
-                mem.course_info = {
-                    "name": course_name.strip(),
-                    "exam_date": exam_date.strip() or "未知",
-                    "hours": available_hours,
-                    "topics": source or "（未提供）",
-                    "has_pdf": bool(pdf_text),
-                    "is_vision": False,
-                }
-
-                if pdf_text and not topics.strip():
-                    result = agent.analyze_pdf(
-                        course_name=course_name.strip(),
-                        pdf_text=pdf_text,
-                        exam_date=exam_date.strip() or "未知",
-                        available_hours=available_hours,
-                    )
-                else:
-                    result = agent.analyze_course(
-                        course_name=course_name.strip(),
-                        topics=source or "未提供",
-                        exam_date=exam_date.strip() or "未知",
-                        available_hours=available_hours,
-                    )
-
-            mem.knowledge_map = result
-            st.session_state.course_done = True
-            st.session_state.page = 1
-            st.rerun()
-
-# ──────────────────────────────────────────────
-# Page 1: 知识点诊断
-# ──────────────────────────────────────────────
-elif st.session_state.page == 1:
-    st.title("🔍 知识点诊断")
-
-    tab1, tab2 = st.tabs(["📊 知识地图", "📝 诊断测试"])
-
-    with tab1:
-        st.markdown(mem.knowledge_map)
-        if st.button("👉 开始诊断测试", type="primary"):
-            pass  # just scroll to tab2
-
-    with tab2:
-        if not st.session_state.diagnostic_questions:
-            if st.button("🩺 生成诊断题", type="primary", use_container_width=True):
-                with st.spinner("出题中..."):
-                    questions = agent.generate_diagnostic_quiz(
-                        mem.course_info["name"],
-                        mem.knowledge_map,
-                    )
-                    st.session_state.diagnostic_questions = questions
-                st.rerun()
-        else:
-            st.markdown(st.session_state.diagnostic_questions)
-
-            user_answers = st.text_area(
-                "✍️ 你的作答（逐题写上你的答案）",
-                placeholder="第1题：我选 C\n第2题：我选 A\n第3题：...\n第4题：...",
-                height=200,
-            )
-
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                if st.button("📤 提交批改", type="primary", use_container_width=True,
-                            disabled=not user_answers.strip()):
-                    with st.spinner("批改中..."):
-                        result = agent.grade_diagnostic(
-                            mem.course_info["name"],
-                            st.session_state.diagnostic_questions,
-                            user_answers.strip(),
-                        )
-                        mem.weak_points = result
-                        st.session_state.diagnostic_done = True
-                        # Parse score
-                        import re
-                        score_match = re.search(r'总分[：:]\s*(\d+)', result)
-                        if score_match:
-                            mem.total_score = int(score_match.group(1))
-                    st.rerun()
-            with col2:
-                if st.button("🔄 重新出题", use_container_width=True):
-                    st.session_state.diagnostic_questions = ""
-                    st.rerun()
-
-            if st.session_state.diagnostic_done:
-                st.divider()
-                st.subheader("📊 诊断结果")
-                if mem.total_score:
-                    level = "稳" if mem.total_score >= 70 else ("悬" if mem.total_score >= 40 else "危")
-                    color = "#155724" if mem.total_score >= 70 else ("#856404" if mem.total_score >= 40 else "#721c24")
-                    bg = "#d4edda" if mem.total_score >= 70 else ("#fff3cd" if mem.total_score >= 40 else "#f8d7da")
-                    st.markdown(
-                        f"<div style='text-align:center;padding:16px;background:{bg};border-radius:16px;'>"
-                        f"<span style='font-size:48px;font-weight:800;color:{color};'>{mem.total_score}</span>"
-                        f"<span style='font-size:20px;color:{color};'> / 100</span>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-                st.markdown(mem.weak_points)
-                if st.button("📅 下一步：生成突击计划 →", type="primary"):
-                    st.session_state.page = 2
-                    st.rerun()
-
-# ──────────────────────────────────────────────
-# Page 2: 突击计划
-# ──────────────────────────────────────────────
-elif st.session_state.page == 2:
-    st.title("📅 极限突击计划")
-
-    if not st.session_state.plan_done:
-        with st.spinner("🏥 正在为你量身定制突击计划..."):
-            plan = agent.generate_cram_plan(
-                mem.course_info["name"],
-                mem.course_info["hours"],
-                mem.weak_points,
-                mem.knowledge_map,
-            )
-            mem.study_plan = plan
-            st.session_state.plan_done = True
-        st.rerun()
-
-    st.markdown(mem.study_plan)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔙 返回诊断", use_container_width=True):
-            st.session_state.page = 1
-            st.rerun()
-    with col2:
-        if st.button("📝 下一步：模拟考试 →", type="primary", use_container_width=True):
-            st.session_state.page = 3
-            st.rerun()
-
-# ──────────────────────────────────────────────
-# Page 3: 模拟考试
-# ──────────────────────────────────────────────
-elif st.session_state.page == 3:
-    st.title("📝 考前模拟")
-
-    if not st.session_state.mock_questions:
-        if st.button("🎲 生成模拟卷", type="primary", use_container_width=True):
-            with st.spinner("出卷中..."):
-                exam = agent.generate_mock_exam(
-                    mem.course_info["name"],
-                    mem.weak_points,
-                )
-                st.session_state.mock_questions = exam
-            st.rerun()
-    elif not st.session_state.mock_done:
-        st.markdown(st.session_state.mock_questions)
-
-        user_answers = st.text_area(
-            "✍️ 你的作答",
-            placeholder="第1题：...\n第2题：...\n第3题：...",
-            height=200,
-        )
-
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            if st.button("📤 提交批改", type="primary", use_container_width=True,
-                        disabled=not user_answers.strip()):
-                with st.spinner("批改中..."):
-                    result = agent.grade_mock_exam(
-                        st.session_state.mock_questions,
-                        user_answers.strip(),
-                    )
-                    st.session_state.mock_done = True
-                    # Store result in memory for display
-                    import re
-                    score_match = re.search(r'总分[：:]\s*(\d+)', result)
-                    if score_match:
-                        mem.total_score = int(score_match.group(1))
-                    # Store result text
-                    st.session_state.mock_result = result
-                st.rerun()
-        with col2:
-            if st.button("🔄 换一套卷", use_container_width=True):
-                st.session_state.mock_questions = ""
-                st.rerun()
-    else:
-        st.subheader("🎯 模拟考成绩")
-        result_text = st.session_state.get("mock_result", "")
-        st.markdown(result_text)
-
-        if st.button("🔙 回头复习计划", use_container_width=True):
-            st.session_state.page = 2
-            st.rerun()
-
-        st.divider()
-        st.success("""
-        ### 🎉 训练完成！
-
-        你已经完成了完整的突击流程：
-        1. ✅ 知识地图分析
-        2. ✅ 薄弱点诊断
-        3. ✅ 个性化突击计划
-        4. ✅ 模拟考试
-
-        **按左侧「🔄 重新开始」可以换一门课继续突击！**
-        """)
