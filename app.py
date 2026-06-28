@@ -1,243 +1,414 @@
-"""赛博意境 — AI 艺术卡片生成器"""
+"""赛博意境 — AI 诗意卡片"""
 
 import streamlit as st
 import os
 from agent import generate_card
-from prompts import STYLE_COLORS, STYLE_PROMPTS
+from prompts import STYLES
 from llm_client import check_api_key, reset_client
 
-# ──────────────────────────────────────────────
-st.set_page_config(page_title="赛博意境", page_icon="🎨", layout="centered")
+# ── Page Config ─────────────────────────────────
+st.set_page_config(page_title="赛博意境", page_icon="⚡", layout="centered")
 
+# ── Fonts & Base CSS ────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;700&family=Noto+Serif+SC:wght@400;600;700&family=Orbitron:wght@400;700&display=swap');
 
-    .main .block-container { padding: 2rem 1rem; max-width: 800px; }
-    #MainMenu, footer { visibility: hidden; }
+    * { box-sizing: border-box; }
+    .main .block-container { padding: 3rem 1.5rem; max-width: 720px; }
+    #MainMenu, footer, .stAppDeployButton { visibility: hidden; }
+    .stButton button { transition: all 0.2s ease; }
 
-    .card {
-        padding: 40px 36px;
-        border-radius: 20px;
-        margin: 20px 0;
-        min-height: 320px;
+    /* ═══════════════════════════════════════
+       HEADER
+       ═══════════════════════════════════════ */
+    .hero {
+        text-align: center;
+        margin-bottom: 3rem;
+        padding-top: 1rem;
+    }
+    .hero h1 {
+        font-family: 'Noto Serif SC', serif;
+        font-size: 3.2rem;
+        font-weight: 600;
+        letter-spacing: 0.25em;
+        margin: 0 0 0.5rem 0;
+        background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .hero .sub {
+        font-size: 0.95rem;
+        color: #999;
+        letter-spacing: 0.15em;
+        font-weight: 300;
+    }
+
+    /* ═══════════════════════════════════════
+       INPUT AREA
+       ═══════════════════════════════════════ */
+    .input-row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+    }
+    .input-row > div { flex: 1; }
+    .stTextInput > div > div > input {
+        font-size: 1.15rem !important;
+        text-align: center !important;
+        border-radius: 16px !important;
+        border: 2px solid #e5e7eb !important;
+        padding: 14px 20px !important;
+        transition: all 0.3s ease !important;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #a855f7 !important;
+        box-shadow: 0 0 0 4px rgba(168,85,247,0.1) !important;
+    }
+
+    /* ═══════════════════════════════════════
+       STYLE PILLS
+       ═══════════════════════════════════════ */
+    .style-pills {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+    }
+    .style-pill {
+        padding: 8px 20px;
+        border-radius: 100px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        border: 1.5px solid #e5e7eb;
+        background: white;
+        color: #666;
+        transition: all 0.25s ease;
+        user-select: none;
+    }
+    .style-pill.active {
+        background: #1a1a2e;
+        color: white;
+        border-color: #1a1a2e;
+    }
+
+    /* ═══════════════════════════════════════
+       CARD
+       ═══════════════════════════════════════ */
+    .art-card {
+        padding: 3rem 2.5rem;
+        border-radius: 24px;
+        margin: 2rem auto;
+        max-width: 520px;
+        min-height: 380px;
         display: flex;
         flex-direction: column;
         justify-content: center;
         position: relative;
         overflow: hidden;
-        transition: all 0.4s ease;
-        box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+        animation: cardIn 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-    .card:hover {
+    .art-card:hover {
         transform: translateY(-4px);
-        box-shadow: 0 16px 60px rgba(0,0,0,0.18);
+    }
+
+    @keyframes cardIn {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 
     .card-title {
-        font-size: 2.4em;
+        font-size: 2.6rem;
         font-weight: 700;
-        margin-bottom: 24px;
-        letter-spacing: 0.08em;
-        line-height: 1.3;
+        letter-spacing: 0.12em;
+        margin-bottom: 1.8rem;
+        line-height: 1.25;
+        position: relative;
+        z-index: 2;
     }
-    .card-text {
-        font-size: 1.3em;
-        line-height: 2;
-        margin-bottom: 28px;
-        opacity: 0.9;
+    .card-body {
+        font-size: 1.15rem;
+        line-height: 2.2;
         flex-grow: 1;
+        position: relative;
+        z-index: 2;
     }
-    .card-footer {
-        font-size: 0.95em;
-        opacity: 0.6;
-        letter-spacing: 0.05em;
-        border-top: 1px solid;
-        padding-top: 16px;
+    .card-foot {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        padding-top: 1.5rem;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        opacity: 0.65;
+        position: relative;
+        z-index: 2;
     }
-    .emotion-tag {
-        padding: 4px 16px;
-        border-radius: 20px;
-        font-size: 0.85em;
+    .card-seal {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: 700;
         letter-spacing: 0.05em;
-        border: 1px solid;
-        opacity: 0.7;
+        border: 2px solid;
+        opacity: 0.55;
+        flex-shrink: 0;
     }
 
-    /* 装饰元素 */
-    .card::before {
-        content: '';
+    /* ── Ink Decorations ── */
+    .decor-ink-ring {
         position: absolute;
-        top: -60px;
-        right: -60px;
-        width: 200px;
-        height: 200px;
         border-radius: 50%;
+        border: 1.5px solid;
+        opacity: 0.12;
+        pointer-events: none;
+    }
+    .decor-ink-dot {
+        position: absolute;
+        border-radius: 50%;
+        opacity: 0.08;
+        pointer-events: none;
+    }
+
+    /* ── Cyber Decorations ── */
+    .decor-scanline {
+        position: absolute;
+        left: 0; right: 0;
+        height: 2px;
+        opacity: 0.15;
+        pointer-events: none;
+    }
+    .decor-glitch-block {
+        position: absolute;
+        border-radius: 4px;
         opacity: 0.06;
         pointer-events: none;
     }
-    .card.ink::before { background: #3d3226; }
-    .card.cyber::before { background: #00ffcc; }
-    .card.minimal::before { background: #999; }
-    .card.retro::before { background: #8b6914; }
 
-    /* 入场动画 */
-    @keyframes fadeUp {
-        from { opacity: 0; transform: translateY(30px); }
-        to { opacity: 1; transform: translateY(0); }
+    /* ── Minimal Decorations ── */
+    .decor-thin-line {
+        position: absolute;
+        opacity: 0.15;
+        pointer-events: none;
     }
-    .card { animation: fadeUp 0.6s ease-out; }
 
-    /* 输入区 */
-    .input-section {
+    /* ── Retro Decorations ── */
+    .decor-stamp {
+        position: absolute;
+        border: 2px dashed;
+        border-radius: 8px;
+        opacity: 0.2;
+        pointer-events: none;
+    }
+
+    /* ═══════════════════════════════════════
+       EXAMPLE CHIPS
+       ═══════════════════════════════════════ */
+    .example-chip {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 100px;
+        font-size: 0.85rem;
+        color: #888;
+        cursor: pointer;
+        border: 1px solid #eee;
+        transition: all 0.2s ease;
+    }
+    .example-chip:hover { border-color: #a855f7; color: #a855f7; }
+
+    /* ═══════════════════════════════════════
+       DIVIDER
+       ═══════════════════════════════════════ */
+    .art-divider {
         text-align: center;
-        margin-bottom: 30px;
-    }
-    .big-input input {
-        font-size: 1.3em !important;
-        text-align: center !important;
+        margin: 2rem 0;
+        color: #ddd;
+        font-size: 0.8rem;
+        letter-spacing: 0.3em;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────
-# API Key
-# ──────────────────────────────────────────────
+# ── API Key Check ───────────────────────────────
 if not check_api_key():
-    with st.expander("🔑 配置 API Key", expanded=True):
-        api_key = st.text_input("输入 SiliconFlow API Key", type="password", placeholder="sk-...")
-        if api_key:
-            os.environ["DEEPSEEK_API_KEY"] = api_key
-            import config
-            config.DEEPSEEK_API_KEY = api_key
+    with st.expander("🔑 API Key", expanded=True):
+        k = st.text_input("SiliconFlow Key", type="password", placeholder="sk-...")
+        if k:
+            os.environ["DEEPSEEK_API_KEY"] = k
+            import config; config.DEEPSEEK_API_KEY = k
             reset_client()
-            st.success("✅ 已设置！")
             st.rerun()
         st.stop()
 
-# ──────────────────────────────────────────────
-# 主界面
-# ──────────────────────────────────────────────
+# ── Session State ───────────────────────────────
+if "cards" not in st.session_state:
+    st.session_state.cards = {}
+if "active_style" not in st.session_state:
+    st.session_state.active_style = "禅意水墨"
+if "keyword" not in st.session_state:
+    st.session_state.keyword = ""
 
+# ── Header ──────────────────────────────────────
 st.markdown("""
-<div style="text-align:center; margin-bottom:10px;">
-    <h1 style="font-size:3em; font-weight:800; letter-spacing:0.1em; margin-bottom:0;">赛 博 意 境</h1>
-    <p style="color:#888; font-size:1em;">输入一个词，AI 为你造一张诗意卡片</p>
+<div class="hero">
+    <h1>赛 博 意 境</h1>
+    <p class="sub">输 入 一 个 词 · AI 为 你 造 一 首 诗</p>
 </div>
 """, unsafe_allow_html=True)
 
-# 输入区
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1:
+# ── Input Row ───────────────────────────────────
+ci, cs = st.columns([5, 2])
+with ci:
     keyword = st.text_input(
-        "你的关键词",
-        placeholder="比如：夏天、暗恋、失眠、故乡、自由...",
-        label_visibility="collapsed",
-        key="keyword_input",
-    )
-with col2:
-    style = st.selectbox(
-        "风格",
-        list(STYLE_PROMPTS.keys()),
+        "关键词",
+        value=st.session_state.keyword,
+        placeholder="夏天 / 暗恋 / 故乡 / 自由 / 失眠 / 远方 …",
         label_visibility="collapsed",
     )
-with col3:
-    generate_btn = st.button("✨ 生成卡片", use_container_width=True, type="primary")
+    if keyword != st.session_state.keyword:
+        st.session_state.keyword = keyword
+with cs:
+    if st.button("⚡ 生成", use_container_width=True, type="primary", key="gen_btn"):
+    if kw:
+        st.session_state._trigger = active
+        st.session_state.keyword = kw
+        st.rerun()
 
-# ──────────────────────────────────────────────
-# 示例关键词
-# ──────────────────────────────────────────────
-examples = ["夏天", "暗恋", "失眠", "故乡", "自由", "孤独", "毕业", "远方", "初恋", "月亮"]
+# ── Style Pills ─────────────────────────────────
+pill_cols = st.columns(len(STYLES))
+clicked_style = None
+for i, (sname, sinfo) in enumerate(STYLES.items()):
+    with pill_cols[i]:
+        is_active = st.session_state.active_style == sname
+        label = f"{'● ' if is_active else ''}{sname}"
+        if st.button(label, key=f"pill_{sname}", use_container_width=True,
+                     type="primary" if is_active else "secondary"):
+            st.session_state.active_style = sname
+            st.rerun()
 
-if not generate_btn and not st.session_state.get("cards"):
-    st.markdown("<div style='text-align:center; margin:16px 0;'>", unsafe_allow_html=True)
-    st.caption("💡 试试这些关键词：")
-    cols = st.columns(len(examples))
+# ── Example Words ───────────────────────────────
+if not st.session_state.cards:
+    st.markdown("<div style='text-align:center;margin-top:1rem;'>", unsafe_allow_html=True)
+    st.caption("试试这些 →")
+    examples = ["夏天", "暗恋", "失眠", "故乡", "自由", "孤独", "毕业", "远方", "初恋", "雨夜"]
+    ec = st.columns(len(examples))
     for i, ex in enumerate(examples):
-        with cols[i]:
-            if st.button(ex, key=f"ex_{ex}", use_container_width=True):
+        with ec[i]:
+            if st.button(ex, key=f"ex_{ex}"):
                 st.session_state.keyword = ex
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────
-# Session State
-# ──────────────────────────────────────────────
-if "cards" not in st.session_state:
-    st.session_state.cards = {}  # {style: card_dict}
+# ── Card Renderer ───────────────────────────────
+def render_card(card: dict, style_name: str, style: dict, compact: bool = False):
+    """渲染一张艺术卡片"""
+    decor = style["decor"]
+    seal_color = style["seal_color"]
+    text_color = style["text"]
+    accent = style["accent"]
+    muted = style["muted"]
+    title_font = style["font_title"]
+    body_font = style["font_body"]
 
-# 预填充输入框
-if "keyword" in st.session_state:
-    # 用 js 没法改，手动提示
-    pass
+    # Decorative elements
+    decor_html = ""
+    if decor == "ink":
+        decor_html = f"""
+        <div class="decor-ink-ring" style="width:180px;height:180px;top:-60px;right:-60px;border-color:{text_color};"></div>
+        <div class="decor-ink-ring" style="width:100px;height:100px;bottom:-30px;left:-30px;border-color:{text_color};"></div>
+        <div class="decor-ink-dot" style="width:300px;height:300px;top:20%;left:-100px;background:{accent};"></div>"""
+    elif decor == "cyber":
+        decor_html = f"""
+        <div class="decor-scanline" style="top:30%;background:{accent};"></div>
+        <div class="decor-scanline" style="top:70%;background:{accent};opacity:0.08;"></div>
+        <div class="decor-glitch-block" style="width:120px;height:60px;top:20%;right:-20px;background:{accent};"></div>
+        <div class="decor-glitch-block" style="width:80px;height:40px;bottom:25%;left:-15px;background:{text_color};"></div>"""
+    elif decor == "minimal":
+        decor_html = f"""
+        <div class="decor-thin-line" style="top:40px;left:40px;right:40px;height:1px;background:{muted};"></div>
+        <div class="decor-thin-line" style="bottom:40px;left:40px;right:40px;height:1px;background:{muted};"></div>"""
+    elif decor == "retro":
+        decor_html = f"""
+        <div class="decor-stamp" style="top:20px;right:30px;width:60px;height:60px;border-color:{accent};transform:rotate(12deg);"></div>
+        <div class="decor-ink-ring" style="width:140px;height:140px;bottom:-50px;left:-50px;border-color:{accent};"></div>"""
 
-# ──────────────────────────────────────────────
-# 生成卡片
-# ──────────────────────────────────────────────
-actual_keyword = keyword or st.session_state.get("keyword", "")
+    # Shadow
+    shadow = "0 4px 32px rgba(0,0,0,0.06)" if decor != "cyber" else "0 4px 40px rgba(100,0,200,0.15)"
 
-if generate_btn and actual_keyword.strip():
-    with st.spinner(f"🎨 正在为你创作「{style}」风格卡片..."):
-        try:
-            card = generate_card(actual_keyword.strip(), style)
-            st.session_state.cards[style] = card
-            st.session_state.keyword = actual_keyword.strip()
-        except Exception as e:
-            st.error(f"生成失败：{e}")
-
-# ──────────────────────────────────────────────
-# 显示卡片
-# ──────────────────────────────────────────────
-if st.session_state.cards:
-    st.divider()
-
-    styles_to_show = list(st.session_state.cards.keys())
-
-    for s in styles_to_show:
-        card = st.session_state.cards[s]
-        colors = STYLE_COLORS[s]
-        css_class = {"水墨": "ink", "赛博朋克": "cyber", "极简": "minimal", "复古": "retro"}.get(s, "")
-
-        # 生成卡片 HTML
-        st.markdown(f"""
-        <div class="card {css_class}" style="
-            background: {colors['bg']};
-            color: {colors['text']};
-            font-family: {colors['font']};
-        ">
-            <div class="card-title">{card.get('title', '')}</div>
-            <div class="card-text">{card.get('text', '')}</div>
-            <div class="card-footer" style="border-color:{colors['accent']};">
-                <span>— {card.get('footer', '')}</span>
-                <span class="emotion-tag" style="border-color:{colors['accent']};">{card.get('emotion', '')}</span>
+    h = """<div class="art-card" style="
+        background: """ + style["card_bg"] + """;
+        color: """ + text_color + """;
+        box-shadow: """ + shadow + """;
+        """ + ("max-width:480px;min-height:280px;padding:2rem 1.8rem;" if compact else "") + """
+    ">""" + decor_html + """
+        <div class="card-title" style="font-family:""" + title_font + """!important;">""" + card.get("title", "") + """</div>
+        <div class="card-body" style="font-family:""" + body_font + """!important;">""" + card.get("text", "") + """</div>
+        <div class="card-foot" style="border-top:1px solid """ + muted + """33;">
+            <span>— """ + card.get("footer", "") + """</span>
+            <div class="card-seal" style="border-color:""" + seal_color + """;color:""" + seal_color + """;">
+                """ + card.get("emotion", "")[:2] + """
             </div>
         </div>
-        """, unsafe_allow_html=True)
+    </div>"""
 
-    st.caption(f"🎨 风格：{' | '.join(styles_to_show)} | 📸 截图保存即可分享")
+    st.markdown(h, unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────
-# 底部：多风格一键生成
-# ──────────────────────────────────────────────
+# ── Generate ────────────────────────────────────
+kw = st.session_state.keyword.strip()
+active = st.session_state.active_style
+
+# If user clicked generate button or has keyword + no card yet for this style
+should_generate = st.session_state.get("_trigger") == active
+
+if should_generate and kw:
+    with st.spinner(""):
+        try:
+            card = generate_card(kw, active)
+            st.session_state.cards[active] = card
+            st.session_state._trigger = None
+        except Exception as e:
+            st.error(f"生成失败：{e}")
+            st.session_state._trigger = None
+
+# ── Render Cards ────────────────────────────────
+if st.session_state.cards:
+    # Show active card first
+    active_card = st.session_state.cards.get(active)
+    if active_card:
+        render_card(active_card, active, STYLES[active])
+
+    # Show other generated styles below
+    other_styles = [s for s in st.session_state.cards if s != active]
+    if other_styles:
+        st.markdown('<div class="art-divider">··· 已生成的其他风格 ···</div>',
+                   unsafe_allow_html=True)
+        for s in other_styles:
+            render_card(st.session_state.cards[s], s, STYLES[s], compact=True)
+
+# ── Quick Generate All ──────────────────────────
 if st.session_state.cards:
     st.divider()
-    st.markdown("### 🎭 换风格再看看？")
-    remaining = [s for s in STYLE_PROMPTS.keys() if s not in st.session_state.cards]
+    st.caption("✨ 一键补全其他风格：")
+    remaining = [s for s in STYLES if s not in st.session_state.cards]
     if remaining:
-        cols = st.columns(len(remaining))
+        rc = st.columns(len(remaining))
         for i, s in enumerate(remaining):
-            with cols[i]:
-                if st.button(f"生成「{s}」风格", key=f"style_{s}", use_container_width=True):
-                    with st.spinner(f"创作中..."):
-                        kw = st.session_state.get("keyword", "")
+            with rc[i]:
+                if st.button(f"生成「{s}」", key=f"gen_{s}", use_container_width=True):
+                    with st.spinner(""):
                         card = generate_card(kw, s)
                         st.session_state.cards[s] = card
                     st.rerun()
-
-    if st.button("🔄 清空重新开始", use_container_width=True):
+    if st.button("⟳ 清空重来", use_container_width=True):
         st.session_state.cards = {}
         st.session_state.keyword = ""
         st.rerun()
